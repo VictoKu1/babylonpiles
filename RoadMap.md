@@ -17,10 +17,13 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Security best practices (JWT, password hashing, etc.)
 - Docker-only, OS-agnostic documentation
 - CONTRIBUTING.md and code style guidelines
+- Drag-and-drop file move and parent folder navigation in the file browser
+- Backend move API for files/folders
+- Kiwix-Serve integration for .ZIM files
 
 ---
 
-## 🚧 In Progress / Planned
+## 🛠️ In Progress / Planned
 - Streamline Docker images for size and performance
 - Automated Docker image builds and releases (CI/CD)
 - User roles and permissions
@@ -35,6 +38,9 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Vulnerability scanning in Docker images
 - Community chat (Discord/Matrix)
 - More example content piles
+- UI polish for drag-and-drop (visual cues, accessibility)
+- Multi-select and batch file operations
+- Undo/redo for file moves
 
 ---
 

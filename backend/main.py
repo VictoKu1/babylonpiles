@@ -45,6 +45,10 @@ async def lifespan(app: FastAPI):
     system_manager = SystemManager()
     mode_manager = ModeManager()
     
+    # Set global managers in endpoints
+    from app.api.v1.endpoints.system import set_managers
+    set_managers(mode_manager, system_manager)
+    
     # Start in Store mode by default (offline)
     await mode_manager.set_mode("store")
     

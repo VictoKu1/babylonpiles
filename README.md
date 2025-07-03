@@ -48,6 +48,9 @@ BabylonPiles is an open-source, modular, offline-first knowledge server. It lets
 - 🔄 **Auto-updates**: Sync content from trusted sources or repositories
 - 👥 **Multi-user**: Share your knowledge base with family, teams, classrooms, or communities
 - 🕹️ **Open & extensible**: Build plugins for new content categories or automate your own data fetchers
+- 🖱️ **Drag-and-drop file management**: Move files and folders in the web UI with native drag-and-drop
+- 📁 **Parent folder navigation**: Move files up a level using the '..' entry in every folder
+- 🗂️ **Kiwix-Serve integration**: Serve and browse .ZIM files (offline Wikipedia, etc.) over your network
 
 ---
 
@@ -57,6 +60,29 @@ BabylonPiles is an open-source, modular, offline-first knowledge server. It lets
 - **RAM**: 2GB minimum, 4GB recommended
 - **Storage**: 10GB+ for system, additional for content
 - **Network**: Ethernet or WiFi
+
+---
+
+## Usage Highlights
+
+### File Browser
+- Browse, upload, download, and delete files and folders from the web UI
+- **Drag and drop** files/folders onto folders or the '..' entry to move them
+- '..' entry lets you move items up to the parent folder
+- All file operations are reflected instantly in the UI
+
+### Quick Add & Pile Management
+- Add new content sources (piles) manually or with one click from popular repositories
+- Validate URLs before adding
+- Download and delete piles with progress tracking
+
+### ZIM File Viewing & Kiwix-Serve
+- View .ZIM files (offline Wikipedia, etc.) in-browser or via Kiwix-Serve
+- Kiwix-Serve runs in Docker and is accessible at http://localhost:8081/
+- Share ZIM content on your local network
+
+### Backend Move API
+- Move or rename files/folders via POST `/api/v1/files/move` (used by the frontend drag-and-drop)
 
 ---
 
@@ -77,6 +103,9 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Security best practices (JWT, password hashing, etc.)
 - Docker-only, OS-agnostic documentation
 - CONTRIBUTING.md and code style guidelines
+- **Drag-and-drop file move and parent folder navigation**
+- **Kiwix-Serve integration for .ZIM files**
+- **Backend move API**
 
 ### In Progress / Planned
 - Streamline Docker images for size and performance

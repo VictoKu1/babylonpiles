@@ -2,20 +2,30 @@
 System endpoints for mode switching and status monitoring
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.core.database import get_db
 from app.core.mode_manager import ModeManager
 from app.core.system import SystemManager
 from app.models.system_status import SystemStatus
 from sqlalchemy import select
+from fastapi.responses import FileResponse
+import os
 
 router = APIRouter()
 
 # Global managers (will be set by main.py)
 mode_manager: ModeManager = None
 system_manager: SystemManager = None
+
+DATA_ROOT = "/mnt/babylonpiles/data"
+
+def set_managers(mode_mgr: ModeManager, sys_mgr: SystemManager):
+    """Set global managers"""
+    global mode_manager, system_manager
+    mode_manager = mode_mgr
+    system_manager = sys_mgr
 
 def get_mode_manager() -> ModeManager:
     """Get mode manager instance"""

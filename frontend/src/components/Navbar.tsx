@@ -13,6 +13,9 @@ export function Navbar() {
           </div>
           <div className="flex items-center space-x-4">
             <span className="text-sm text-gray-500">Admin</span>
+            <li>
+              <Link to="/browse" className="hover:text-blue-600">Browse Files</Link>
+            </li>
           </div>
         </div>
       </div>

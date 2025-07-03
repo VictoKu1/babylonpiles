@@ -2,7 +2,7 @@
 Piles endpoints for managing content modules
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -10,6 +10,9 @@ from typing import Dict, Any, List, Optional
 import os
 import shutil
 from pathlib import Path
+import aiohttp
+import asyncio
+from urllib.parse import urlparse
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -375,4 +378,150 @@ async def get_pile_logs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting pile logs: {str(e)}"
-        ) 
+        )
+
+@router.post("/{pile_id}/download-source")
+async def download_pile_source(
+    pile_id: int,
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """Download content from the pile's source URL"""
+    try:
+        result = await db.execute(select(Pile).where(Pile.id == pile_id))
+        pile = result.scalar_one_or_none()
+        
+        if not pile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pile not found"
+            )
+        
+        if not pile.source_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Pile has no source URL"
+            )
+        
+        # Set downloading status
+        pile.is_downloading = True
+        pile.download_progress = 0.0
+        await db.commit()
+        
+        try:
+            # Create data directory if it doesn't exist
+            data_dir = Path(settings.data_dir)
+            data_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename from URL
+            parsed_url = urlparse(pile.source_url)
+            filename = os.path.basename(parsed_url.path)
+            if not filename:
+                filename = f"{pile.name}.{pile.source_type}"
+            
+            file_path = data_dir / filename
+            
+            # Download file
+            async with aiohttp.ClientSession() as session:
+                async with session.get(pile.source_url) as response:
+                    if response.status != 200:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Failed to download from source: HTTP {response.status}"
+                        )
+                    
+                    # Get content length for progress tracking
+                    content_length = response.headers.get('content-length')
+                    total_size = int(content_length) if content_length else None
+                    downloaded_size = 0
+                    
+                    with open(file_path, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            
+                            # Update progress (but don't commit too frequently)
+                            if total_size and downloaded_size % (1024 * 1024) == 0:  # Every 1MB
+                                pile.download_progress = downloaded_size / total_size
+                                await db.commit()
+            
+            # Update pile with file information
+            pile.file_path = str(file_path)
+            pile.file_size = os.path.getsize(file_path)
+            pile.file_format = Path(filename).suffix.lstrip(".")
+            pile.is_downloading = False
+            pile.download_progress = 1.0
+            pile.is_active = True
+            
+            await db.commit()
+            await db.refresh(pile)
+            
+            return {
+                "success": True,
+                "data": pile.to_dict(),
+                "message": f"Successfully downloaded {filename}"
+            }
+            
+        except Exception as e:
+            # Reset downloading status on error
+            try:
+                pile.is_downloading = False
+                pile.download_progress = 0.0
+                await db.commit()
+            except:
+                # If commit fails, rollback and try again
+                await db.rollback()
+                pile.is_downloading = False
+                pile.download_progress = 0.0
+                await db.commit()
+            raise e
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            await db.rollback()
+        except:
+            pass  # Ignore rollback errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error downloading pile source: {str(e)}"
+        )
+
+@router.post("/validate-url")
+async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
+    """Validate if a URL is accessible"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as response:
+                if response.status == 200:
+                    # Get content length if available
+                    content_length = response.headers.get('content-length')
+                    file_size = int(content_length) if content_length else None
+                    # Don't read the body, just close
+                    await response.release()
+                    return {
+                        "success": True,
+                        "valid": True,
+                        "status_code": response.status,
+                        "file_size": file_size,
+                        "message": "URL is accessible"
+                    }
+                else:
+                    return {
+                        "success": True,
+                        "valid": False,
+                        "status_code": response.status,
+                        "message": f"URL returned status code {response.status}"
+                    }
+    except asyncio.TimeoutError:
+        return {
+            "success": True,
+            "valid": False,
+            "message": "URL validation timed out"
+        }
+    except Exception as e:
+        return {
+            "success": True,
+            "valid": False,
+            "message": f"Error validating URL: {str(e)}"
+        } 
