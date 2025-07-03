@@ -1,6 +1,6 @@
 # 🏛️ BabylonPiles
 
-**Your offline, modular, open-source vault of civilization's knowledge—accessible anywhere, anytime, on any device.**
+**Your offline, modular, open source vault of civilization's knowledge accessible anywhere, anytime, on any device.**
 
 ---
 
