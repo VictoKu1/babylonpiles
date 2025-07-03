@@ -16,7 +16,7 @@ python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 schedule==1.2.0
-gitpython==3.1.40
+gitpython==3.1.41
 torrent-parser==0.3.0
 qrcode[pil]==7.4.2
 Pillow==10.3.0 
