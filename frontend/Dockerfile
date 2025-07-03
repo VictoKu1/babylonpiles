@@ -1,4 +1,3 @@
-# Use Node.js 18 Alpine image
 FROM node:18-alpine
 
 # Set working directory

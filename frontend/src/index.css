@@ -6,11 +6,8 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color: #213547;
+  background-color: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -20,8 +17,6 @@
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
 }
@@ -47,19 +42,4 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
-}
-
-/* Dark mode scrollbar */
-@media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-track {
-    background: #2a2a2a;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    background: #666;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    background: #888;
-  }
 } 
