@@ -141,9 +141,9 @@ async def get_network_info() -> Dict[str, Any]:
             }
             
             for addr in addrs:
-                if addr.family == psutil.AF_INET:
+                if addr.family == 2:  # AF_INET
                     network_info[interface]["addresses"].append(addr.address)
-                elif addr.family == psutil.AF_LINK:
+                elif addr.family == 17:  # AF_LINK
                     network_info[interface]["mac"] = addr.address
         
         # Get network connections

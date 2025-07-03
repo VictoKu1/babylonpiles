@@ -1,7 +1,59 @@
 # 🤝 Contributing to BabylonPiles
 
-Thank you for your interest in making **babylonpiles** better!  
-We welcome contributions from anyone—whether you’re fixing bugs, writing docs, improving UI, or adding new data sources.
+Thank you for your interest in contributing! We welcome all contributions—code, documentation, bug reports, and feature requests.
+
+## 🚀 Quick Start for Contributors (Docker-Only)
+
+The only supported way to develop and test BabylonPiles is with Docker. This ensures your environment matches production and other contributors.
+
+### 1. Prerequisites
+- Docker (with Docker Compose support)
+
+### 2. Clone the repository
+```bash
+git clone https://github.com/VictoKu1/babylonpiles.git
+cd babylonpiles
+```
+
+### 3. Start the development environment
+```bash
+docker-compose up --build -d
+```
+
+### 4. Access the app
+- Backend API: http://localhost:8080
+- API Documentation: http://localhost:8080/docs
+- Frontend: http://localhost:3000
+
+### 5. Making changes
+- Edit code in your local repo as usual.
+- Docker volumes ensure your changes are reflected in the running containers.
+- Use `docker-compose restart` to restart services if needed.
+
+### 6. Running tests
+- (Add test instructions here if available)
+
+---
+
+## Code Style & Guidelines
+- Follow PEP8 for Python code.
+- Use clear, descriptive commit messages.
+- Write docstrings and comments for complex logic.
+- Use Prettier/ESLint for frontend code (if configured).
+
+## Submitting Pull Requests
+- Fork the repo and create your branch from `main`.
+- Ensure your code builds and passes tests in Docker.
+
+## Reporting Issues
+- Use [GitHub Issues](https://github.com/VictoKu1/babylonpiles/issues) for bugs, feature requests, and questions.
+
+## Community
+- Join discussions in the Discussions tab or (coming soon) Discord/Matrix.
+
+---
+
+Thank you for helping make BabylonPiles better!
 
 ## How Can I Contribute?
 
@@ -12,40 +64,6 @@ We welcome contributions from anyone—whether you’re fixing bugs, writing doc
 - 💻 **Code Contributions:** Submit bugfixes, improvements, new features, or plugins via Pull Request (PR).
 - 📝 **Improve Documentation:** Better docs, guides, or translations are always appreciated.
 - 🌍 **Localization:** Help translate the UI or documentation.
-
-## Getting Started
-
-1. **Fork** the repository to your own GitHub account.
-2. **Clone** your fork:
-    ```bash
-    git clone https://github.com/VictoKu1/babylonpiles.git
-    cd babylonpiles
-    ```
-3. **Install dependencies** according to the instructions in the [README](README.md) file
-4. **Create a branch** for your feature or fix:
-    ```bash
-    git checkout -b my-feature
-    ```
-5. **Make your changes**—be sure to add tests or docs if applicable.
-6. **Commit and push:**
-    ```bash
-    git commit -am "Describe your change"
-    git push origin my-feature
-    ```
-7. **Open a Pull Request** from your branch to `main`.
-
-## Code Style & Guidelines
-
-- Follow existing code structure and formatting.
-- Use clear, descriptive commit messages.
-- Add/update comments and documentation.
-- For big changes, [open an Issue first](https://github.com/VictoKu1/babylonpiles/issues) to discuss.
-
-## Reporting Issues
-
-- Search [existing issues](https://github.com/VictoKu1/babylonpiles/issues) before posting.
-- Include OS/Platform, steps to reproduce, expected and actual behavior.
-- Screenshots or logs are helpful!
 
 ## Need Help?
 

@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: babylonpiles-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+      - babylonpiles_data:/mnt/babylonpiles
+      - /tmp/babylonpiles:/tmp/babylonpiles
+    environment:
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DATABASE_URL=sqlite:///babylonpiles.db
+      - SECRET_KEY=your-secret-key-change-this-in-production
+      - DATA_DIR=/mnt/babylonpiles/data
+      - PILES_DIR=/mnt/babylonpiles/piles
+      - TEMP_DIR=/tmp/babylonpiles
+      - WIFI_SSID=BabylonPiles
+      - WIFI_PASSWORD=babylonpiles123
+      - DEFAULT_MODE=store
+    restart: unless-stopped
+    networks:
+      - babylonpiles-network
+    depends_on:
+      - frontend
+
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: babylonpiles-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    restart: unless-stopped
+    networks:
+      - babylonpiles-network
+
+volumes:
+  babylonpiles_data:
+    driver: local
+
+networks:
+  babylonpiles-network:
+    driver: bridge 

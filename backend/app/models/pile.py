@@ -40,7 +40,7 @@ class Pile(Base):
     download_progress = Column(Float, default=0.0)  # 0.0 to 1.0
     
     # Metadata
-    metadata = Column(JSON, nullable=True)  # Additional metadata
+    pile_metadata = Column(JSON, nullable=True)  # Additional metadata
     tags = Column(JSON, nullable=True)  # List of tags
     
     # Timestamps
@@ -69,7 +69,7 @@ class Pile(Base):
             "is_active": self.is_active,
             "is_downloading": self.is_downloading,
             "download_progress": self.download_progress,
-            "metadata": self.metadata,
+            "metadata": self.pile_metadata,
             "tags": self.tags,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

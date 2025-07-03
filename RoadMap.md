@@ -222,3 +222,46 @@
 **This roadmap is a living document—suggest your ideas or vote for features in Issues or Discussions!**
 
 > *babylonpiles: Piles of knowledge for a resilient future.*
+
+## Deployment & Platform
+- [x] Docker Compose as the only supported deployment method
+- [x] Remove all manual/native/OS-specific installation and setup
+- [x] Documentation is now Docker-only and OS-agnostic
+- [ ] Streamline Docker images for size and performance
+- [ ] Automated Docker image builds and releases (CI/CD)
+
+## Core Features
+- [x] FastAPI backend with async SQLAlchemy
+- [x] React frontend
+- [x] JWT authentication
+- [x] Modular content sources (Kiwix, HTTP, Torrent)
+- [x] System monitoring and metrics
+- [x] Mode switching (Learn/Store)
+- [ ] User roles and permissions
+- [ ] Content indexing and search
+- [ ] Admin portal for uploading, updating, deleting modules
+- [ ] Responsive web interface
+- [ ] Comprehensive API documentation
+
+## Data & Content
+- [x] Pile management (CRUD)
+- [x] Update system for content
+- [ ] More content sources (Project Gutenberg, OpenStreetMap, Internet Archive)
+- [ ] Content versioning and rollback
+- [ ] Content discovery and recommendations
+
+## Quality & Security
+- [x] Security best practices (JWT, password hashing, etc.)
+- [ ] Automated tests (unit, integration)
+- [ ] Vulnerability scanning in Docker images
+- [ ] Regular dependency updates
+
+## Community & Contribution
+- [x] CONTRIBUTING.md and code style guidelines
+- [x] Issue templates and PR templates
+- [ ] Community chat (Discord/Matrix)
+- [ ] More example content piles
+
+---
+
+> BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge server. All future development will focus on Docker-based deployment and features accessible via the web UI and API.

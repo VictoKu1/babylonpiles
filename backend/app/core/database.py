@@ -34,8 +34,8 @@ AsyncSessionLocal = async_sessionmaker(
 # Base class for models
 Base = declarative_base()
 
-# Metadata for migrations
-metadata = MetaData()
+# Metadata for migrations (renamed to avoid conflict)
+db_metadata = MetaData()
 
 async def init_db():
     """Initialize database tables"""

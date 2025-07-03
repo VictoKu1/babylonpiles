@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Dict, Any
 from datetime import datetime, timedelta
-import jwt
+from jose import jwt
 
 from app.core.database import get_db
 from app.core.config import settings

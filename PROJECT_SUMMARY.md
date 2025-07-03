@@ -1,5 +1,126 @@
 # BabylonPiles Project Summary
 
+BabylonPiles is a modular, offline-first, open-source knowledge server for Raspberry Pi, PC, and more. It lets you store, organize, and serve critical data—encyclopedias, books, guides, and more—anywhere, anytime.
+
+---
+
+## 🚀 Docker Quick Start (Docker-Only)
+
+**BabylonPiles is a Docker-only application. The only supported way to run it is with Docker Compose.**
+
+### Prerequisites
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows, Mac, Linux)
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/VictoKu1/babylonpiles.git
+cd babylonpiles
+```
+
+### 2. Start everything with Docker Compose
+```bash
+docker-compose up --build -d
+```
+
+> Or, if you prefer, you can use the provided helper script for your OS:
+> - On Linux/Mac/WSL: `./run-docker.sh`
+> - On Windows: `run-docker.bat`
+
+### 3. Access the app
+- Backend API: http://localhost:8080
+- API Documentation: http://localhost:8080/docs
+- Frontend: http://localhost:3000
+
+---
+
+## What is BabylonPiles?
+
+- **Offline-first**: No internet required for access
+- **Modular**: Download and update data in categories (encyclopedias, health, tech, books, videos, and more)
+- **Multi-access**: Serve data via Wi-Fi, Ethernet, USB gadget, or direct web browser
+- **Admin control**: Add, update, or remove information through a web UI or CLI
+- **Auto-updates**: Sync content from trusted sources or repositories
+- **Multi-user**: Share your knowledge base with family, teams, classrooms, or communities
+- **Open & extensible**: Build plugins for new content categories or automate your own data fetchers
+
+---
+
+## Key Features
+- FastAPI backend with async SQLAlchemy
+- React frontend
+- JWT authentication
+- Kiwix, HTTP, and Torrent content sources
+- System monitoring and metrics
+- Docker-first deployment
+- Mode switching (Learn/Store)
+- Environment-based configuration
+- Comprehensive logging and monitoring
+
+## 📁 Project Structure
+
+```
+babylonpiles/
+├── backend/                    # Python FastAPI backend
+│   ├── app/
+│   │   ├── api/v1/            # REST API endpoints
+│   │   ├── core/              # Core system components
+│   │   ├── models/            # Database models
+│   │   ├── modules/           # Content source modules
+│   │   └── schemas/           # Pydantic schemas
+│   ├── main.py               # Application entry point
+│   └── requirements.txt      # Python dependencies
+├── frontend/                  # React frontend (scaffolded)
+│   ├── src/                  # React components
+│   ├── package.json          # Node.js dependencies
+│   └── index.html           # Main HTML file
+├── scripts/                   # Utility scripts (Docker only)
+├── docs/                      # Documentation
+│   └── INSTALL.md           # Installation guide
+├── TODO.md                   # Development roadmap
+└── README.md                 # Project overview
+```
+
+## 🚀 Current Status
+
+### ✅ Completed Features
+1. **Backend API**: Complete REST API with all core endpoints
+2. **Database**: SQLAlchemy models with async support
+3. **Mode Management**: Learn/Store mode switching
+4. **Content Sources**: Kiwix, HTTP, and Torrent support
+5. **System Monitoring**: Real-time system metrics
+6. **Authentication**: JWT-based authentication
+7. **Docker-first deployment**
+
+---
+
+## System Integration
+
+- **Auto-mount**: External HDD/SSD detection and mounting (handled by Docker volume configuration)
+- **Network Configuration**: WiFi hotspot and DHCP server setup (if supported by host, not managed by BabylonPiles)
+
+---
+
+## Roadmap
+- [ ] Complete responsive web interface
+- [ ] Admin portal for uploading, updating, deleting modules
+- [ ] Multi-platform support (PC, Mac, Linux)
+- [ ] Advanced user roles & permissions
+- [ ] Content discovery and search
+
+---
+
+## Contributing
+
+**We welcome contributions!**
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development instructions.
+- Use Docker for development and testing for best results.
+
+---
+
+## License
+
+Open source under the [License](LICENSE)
+
 ## 🏗️ What Has Been Built
 
 **BabylonPiles** is now a fully scaffolded, modular offline knowledge NAS system with the following components:
@@ -27,12 +148,6 @@
 - **Torrent Support**: BitTorrent protocol for large files
 - **Local Files**: Manual file upload and management
 
-### ✅ System Integration
-- **Raspberry Pi Support**: Optimized for Pi hardware
-- **Auto-mount**: External HDD/SSD detection and mounting
-- **Service Management**: Systemd service for automatic startup
-- **Network Configuration**: WiFi hotspot and DHCP server setup
-
 ### ✅ Setup & Deployment
 - **Automated Setup Script**: Complete Raspberry Pi installation
 - **Mode Switch Script**: Command-line mode switching
@@ -56,9 +171,8 @@ babylonpiles/
 │   ├── src/                  # React components
 │   ├── package.json          # Node.js dependencies
 │   └── index.html           # Main HTML file
-├── scripts/                   # Setup and utility scripts
-│   ├── setup.sh             # Raspberry Pi setup script
-│   └── mode-switch.sh       # Mode switching script
+├── scripts/                   # Utility scripts
+│   ├── mode-switch.sh       # Mode switching script
 ├── docs/                      # Documentation
 │   └── INSTALL.md           # Installation guide
 ├── TODO.md                   # Development roadmap
@@ -74,8 +188,7 @@ babylonpiles/
 4. **Content Sources**: Kiwix, HTTP, and Torrent support
 5. **System Monitoring**: Real-time system metrics
 6. **Authentication**: JWT-based authentication
-7. **Setup Scripts**: Automated Raspberry Pi installation
-8. **Documentation**: Installation and setup guides
+7. **Docker-first deployment**
 
 ### 🔄 In Progress
 1. **Frontend Development**: React UI components

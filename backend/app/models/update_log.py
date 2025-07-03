@@ -39,7 +39,7 @@ class UpdateLog(Base):
     error_details = Column(JSON, nullable=True)
     
     # Metadata
-    metadata = Column(JSON, nullable=True)
+    log_metadata = Column(JSON, nullable=True)
     
     # Relationships
     pile = relationship("Pile", backref="update_logs")
@@ -65,7 +65,7 @@ class UpdateLog(Base):
             "duration_seconds": self.duration_seconds,
             "error_message": self.error_message,
             "error_details": self.error_details,
-            "metadata": self.metadata,
+            "metadata": self.log_metadata,
         }
     
     @property

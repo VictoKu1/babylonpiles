@@ -215,8 +215,8 @@ class ModeManager:
             interfaces = {}
             for interface, addrs in psutil.net_if_addrs().items():
                 interfaces[interface] = {
-                    "addresses": [addr.address for addr in addrs if addr.family == psutil.AF_INET],
-                    "mac": [addr.address for addr in addrs if addr.family == psutil.AF_LINK]
+                    "addresses": [addr.address for addr in addrs if addr.family == 2],  # AF_INET
+                                          "mac": [addr.address for addr in addrs if addr.family == 17]  # AF_LINK
                 }
             return interfaces
         except Exception as e:
