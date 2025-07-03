@@ -4,7 +4,7 @@
 
 ---
 
-## �� Docker Quick Start
+## 🚀 Docker Quick Start
 
 **BabylonPiles is a Docker-only application. The only supported way to run it is with Docker Compose.**
 
@@ -36,16 +36,16 @@ docker-compose logs -f  # View logs
 
 ---
 
-## What is babylonpiles?
+## What is BabylonPiles?
 
-**babylonpiles** is an open-source, cross-platform, self-hosted knowledge server inspired by the legendary libraries of history. It lets you store, organize, and serve critical data—from offline Wikipedia and medical guides to books, survival manuals, technical documentation, and more.
+BabylonPiles is an open-source, modular, offline-first knowledge server. It lets you store, organize, and serve critical data—from offline Wikipedia and medical guides to books, survival manuals, technical documentation, and more. All features are accessible via a web interface and API, and the system is designed to be cross-platform via Docker.
 
 **Key Features:**
 - 📚 **Modular content**: Download and update data in categories (encyclopedias, health, tech, books, videos, and more)
 - 💡 **Offline-first**: No internet required for access—ideal for emergencies, remote work, or prepping
-- 🌐 **Multiple interfaces**: Access via Wi-Fi hotspot, Ethernet, USB gadget, or direct web browser
-- 🛠️ **Admin control**: Easily add, update, or remove information through a web UI or CLI
-- 🔄 **Auto-updates**: Sync content from trusted sources or repositories, with git-like versioning
+- 🌐 **Multiple interfaces**: Access via web browser, local network, or Wi-Fi hotspot (if supported by host)
+- 🛠️ **Admin control**: Easily add, update, or remove information through a web UI or API
+- 🔄 **Auto-updates**: Sync content from trusted sources or repositories
 - 👥 **Multi-user**: Share your knowledge base with family, teams, classrooms, or communities
 - 🕹️ **Open & extensible**: Build plugins for new content categories or automate your own data fetchers
 
@@ -57,6 +57,44 @@ docker-compose logs -f  # View logs
 - **RAM**: 2GB minimum, 4GB recommended
 - **Storage**: 10GB+ for system, additional for content
 - **Network**: Ethernet or WiFi
+
+---
+
+## Project Status & Roadmap
+
+BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge server. All future development will focus on Docker-based deployment and features accessible via the web UI and API.
+
+### Completed
+- Docker Compose as the only supported deployment method
+- FastAPI backend with async SQLAlchemy
+- React frontend
+- JWT authentication
+- Modular content sources (Kiwix, HTTP, Torrent)
+- System monitoring and metrics
+- Mode switching (Learn/Store)
+- Pile management (CRUD)
+- Content update system
+- Security best practices (JWT, password hashing, etc.)
+- Docker-only, OS-agnostic documentation
+- CONTRIBUTING.md and code style guidelines
+
+### In Progress / Planned
+- Streamline Docker images for size and performance
+- Automated Docker image builds and releases (CI/CD)
+- User roles and permissions
+- Content indexing and search
+- Admin portal for uploading, updating, deleting modules
+- Responsive web interface
+- Comprehensive API documentation
+- More content sources (Project Gutenberg, OpenStreetMap, Internet Archive)
+- Content versioning and rollback
+- Content discovery and recommendations
+- Automated tests (unit, integration)
+- Vulnerability scanning in Docker images
+- Community chat (Discord/Matrix)
+- More example content piles
+
+See [RoadMap.md](RoadMap.md) and [TODO.md](TODO.md) for details.
 
 ---
 
