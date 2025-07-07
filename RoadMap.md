@@ -20,6 +20,10 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Drag-and-drop file move and parent folder navigation in the file browser
 - Backend move API for files/folders
 - Kiwix-Serve integration for .ZIM files
+- Docker volume-based storage for optimal performance
+- Access script for easy data management (cross-platform)
+- Optimized Docker builds with reduced image sizes and faster startup
+- Performance optimizations (disabled SMART checks, reduced background scanning)
 
 ---
 
@@ -41,6 +45,9 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - UI polish for drag-and-drop (visual cues, accessibility)
 - Multi-select and batch file operations
 - Undo/redo for file moves
+- Enhanced access script with backup/restore functionality
+- Volume migration tools for moving data between systems
+- Storage analytics and usage reporting
 
 ---
 

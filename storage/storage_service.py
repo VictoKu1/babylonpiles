@@ -94,6 +94,12 @@ class StorageManager:
         self.file_allocations: Dict[str, StorageAllocation] = {}
         self.chunk_size = int(os.getenv("CHUNK_SIZE", "104857600"))  # 100MB default
         self.max_drives = int(os.getenv("MAX_DRIVES", "10"))
+        self.enable_smart_checks = (
+            os.getenv("ENABLE_SMART_CHECKS", "false").lower() == "true"
+        )
+        self.background_scan_interval = int(
+            os.getenv("BACKGROUND_SCAN_INTERVAL", "300")
+        )  # 5 minutes default
 
         # Load existing data
         self.load_metadata()
@@ -161,7 +167,7 @@ class StorageManager:
             logger.error(f"Error saving metadata: {e}")
 
     def scan_drives(self):
-        """Scan for available drives"""
+        """Scan for available drives - optimized for speed"""
         logger.info("Scanning for drives...")
 
         for i in range(1, self.max_drives + 1):
@@ -170,14 +176,16 @@ class StorageManager:
 
             if os.path.exists(mount_path):
                 try:
-                    # Get disk usage
+                    # Get disk usage - this is fast
                     total, used, free = shutil.disk_usage(mount_path)
 
-                    # Get mount info
-                    mount_info = self.get_mount_info(mount_path)
+                    # Get mount info - simplified and faster
+                    mount_info = self.get_mount_info_fast(mount_path)
 
-                    # Check drive health
-                    health = self.check_drive_health(mount_path)
+                    # Check drive health - only if enabled and not on first scan
+                    health = "unknown"
+                    if self.enable_smart_checks and drive_id in self.drives:
+                        health = self.check_drive_health(mount_path)
 
                     drive_info = DriveInfo(
                         id=drive_id,
@@ -204,33 +212,50 @@ class StorageManager:
         self.save_metadata()
         return list(self.drives.values())
 
-    def get_mount_info(self, path: str) -> Dict[str, str]:
-        """Get mount information for a path"""
+    def get_mount_info_fast(self, path: str) -> Dict[str, str]:
+        """Get mount information - optimized version"""
         try:
-            result = subprocess.run(["df", "-T", path], capture_output=True, text=True)
-            lines = result.stdout.strip().split("\n")
-            if len(lines) > 1:
-                parts = lines[1].split()
-                if len(parts) >= 7:
-                    return {"mount_point": parts[6], "file_system": parts[1]}
+            # Use Python's os.statvfs instead of subprocess for better performance
+            stat = os.statvfs(path)
+            # Try to get filesystem type from /proc/mounts if available
+            fs_type = "unknown"
+            try:
+                with open("/proc/mounts", "r") as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 3 and parts[1] == path:
+                            fs_type = parts[2]
+                            break
+            except:
+                pass
+
+            return {"mount_point": path, "file_system": fs_type}
         except Exception as e:
             logger.error(f"Error getting mount info for {path}: {e}")
-
-        return {"mount_point": path, "file_system": "unknown"}
+            return {"mount_point": path, "file_system": "unknown"}
 
     def check_drive_health(self, path: str) -> str:
-        """Check drive health using smartctl"""
+        """Check drive health using smartctl - only if enabled"""
+        if not self.enable_smart_checks:
+            return "unknown"
+
         try:
             # Try to get device name from mount point
             result = subprocess.run(
-                ["findmnt", "-n", "-o", "SOURCE", path], capture_output=True, text=True
+                ["findmnt", "-n", "-o", "SOURCE", path],
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             device = result.stdout.strip()
 
             if device and os.path.exists(device):
-                # Check SMART status
+                # Check SMART status with timeout
                 smart_result = subprocess.run(
-                    ["smartctl", "-H", device], capture_output=True, text=True
+                    ["smartctl", "-H", device],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
 
                 if (
@@ -245,6 +270,9 @@ class StorageManager:
                     return "failed"
                 else:
                     return "unknown"
+        except subprocess.TimeoutExpired:
+            logger.warning(f"SMART check timeout for {path}")
+            return "unknown"
         except Exception as e:
             logger.error(f"Error checking drive health for {path}: {e}")
 
@@ -470,13 +498,14 @@ class StorageManager:
         }
 
     def start_background_tasks(self):
-        """Start background tasks"""
+        """Start background tasks - optimized for performance"""
 
         def background_scanner():
             while True:
                 try:
+                    # Only do a quick scan, skip SMART checks
                     self.scan_drives()
-                    time.sleep(60)  # Scan every minute
+                    time.sleep(self.background_scan_interval)  # Much longer interval
                 except Exception as e:
                     logger.error(f"Error in background scanner: {e}")
                     time.sleep(60)

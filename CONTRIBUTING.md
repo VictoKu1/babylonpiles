@@ -15,29 +15,51 @@ git clone https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 ```
 
-### 3. Start the development environment
-```bash
-# Option 1: Use the unified script (recommended)
-./babylonpiles.sh
+### 3. Storage Management
+BabylonPiles uses Docker volumes for optimal performance:
+- **Fast Docker builds** (no large files in build context)
+- **Persistent data** (survives container restarts)
+- **Easy access** via provided access script
 
-# Option 2: Manual Docker commands
+**Access your data:**
+```bash
+# Linux/macOS
+chmod +x access_storage.sh
+./access_storage.sh
+
+# Windows (using Git Bash, WSL, or PowerShell)
+# Option 1: Use Git Bash (recommended)
+./access_storage.sh
+
+# Option 2: Use PowerShell
+docker run --rm -v babylonpiles_piles:/data -v ${PWD}/your_zim_files:/source alpine sh -c "cp /source/*.zim /data/"
+```
+
+### 4. Start the development environment
+```bash
 docker-compose up --build -d
 ```
 
-**Note:** The unified script now includes multi-location storage allocation during startup, allowing you to configure specific storage locations for development.
-
-### 4. Access the app
+### 5. Access the app
 - Backend API: http://localhost:8080
 - API Documentation: http://localhost:8080/docs
 - Frontend: http://localhost:3000
+- Kiwix-Serve: http://localhost:8081
 
-### 5. Making changes
+### 6. Making changes
 - Edit code in your local repo as usual.
 - Docker volumes ensure your changes are reflected in the running containers.
 - Use `docker-compose restart` to restart services if needed.
 
-### 6. Running tests
+### 7. Running tests
 - (Add test instructions here if available)
+
+### 8. Troubleshooting
+If you experience slow startup times:
+```bash
+# Clean up Docker system (removes unused images, containers, volumes, and build cache)
+docker system prune -a --volumes
+```
 
 ---
 
@@ -50,6 +72,7 @@ docker-compose up --build -d
 ## Submitting Pull Requests
 - Fork the repo and create your branch from `main`.
 - Ensure your code builds and passes tests in Docker.
+- Test with the access script to ensure data management works correctly.
 
 ## Reporting Issues
 - Use [GitHub Issues](https://github.com/VictoKu1/babylonpiles/issues) for bugs, feature requests, and questions.
@@ -70,6 +93,15 @@ Thank you for helping make BabylonPiles better!
 - 💻 **Code Contributions:** Submit bugfixes, improvements, new features, or plugins via Pull Request (PR).
 - 📝 **Improve Documentation:** Better docs, guides, or translations are always appreciated.
 - 🌍 **Localization:** Help translate the UI or documentation.
+
+## Development Areas
+
+**Current focus areas for contributions:**
+- **Frontend improvements**: React UI components and user experience
+- **Storage system**: Docker volume management and access script
+- **Performance optimization**: Docker builds and startup times
+- **Testing**: Unit and integration tests
+- **Documentation**: API docs, user guides, and examples
 
 ## Need Help?
 

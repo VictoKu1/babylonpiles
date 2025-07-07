@@ -369,6 +369,9 @@ piles/
 temp/
 tmp/
 
+# Project storage - all user data and content
+storage/project_storage/
+
 # Log files
 logs/
 *.log

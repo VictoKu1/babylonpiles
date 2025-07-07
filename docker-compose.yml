@@ -1,15 +1,13 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     volumes:
       - babylonpiles_data:/mnt/babylonpiles/data
-      - ./storage/piles:/mnt/babylonpiles/piles
-    environment:
-      - DATA_DIR=/mnt/babylonpiles/data
-      - PILES_DIR=/mnt/babylonpiles/piles
-      - STORAGE_URL=http://storage:8001
+      - babylonpiles_piles:/mnt/babylonpiles/piles
     networks:
       - babylonpiles-network
     depends_on:
@@ -17,7 +15,9 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     volumes:
@@ -30,23 +30,27 @@ services:
     restart: unless-stopped
 
   storage:
-    build: ./storage
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
     ports:
       - "8001:8001"
     volumes:
-      # Default storage location in current directory
-      - ./storage/info:/mnt/hdd1
+      # Primary storage location - configure in storage/Dockerfile
+      - babylonpiles_storage:/mnt/hdd1
 
       # Additional drives (uncomment and customize as needed)
       # - D:\:/mnt/hdd2
       # - E:\:/mnt/hdd3
       # - F:\:/mnt/hdd4
 
-      # Storage container data
-      - storage_data:/app/data
+      # Storage container data - now visible in file system
+      - babylonpiles_service_data:/app/data
     environment:
       - MAX_DRIVES=1 # Update this to match the number of drives above
       - CHUNK_SIZE=104857600
+      - ENABLE_SMART_CHECKS=false # Disable SMART checks for faster startup
+      - BACKGROUND_SCAN_INTERVAL=300 # Scan every 5 minutes instead of every minute
     networks:
       - babylonpiles-network
     restart: unless-stopped
@@ -57,15 +61,20 @@ services:
     ports:
       - "8081:8080"
     volumes:
-      - ./storage/piles:/data
+      - babylonpiles_piles:/data
     networks:
       - babylonpiles-network
     restart: unless-stopped
 
 volumes:
   babylonpiles_data:
+    driver: local
   babylonpiles_piles:
-  storage_data:
+    driver: local
+  babylonpiles_storage:
+    driver: local
+  babylonpiles_service_data:
+    driver: local
 
 networks:
   babylonpiles-network:

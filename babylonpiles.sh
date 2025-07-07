@@ -112,14 +112,14 @@ start_services() {
             allocate_system_drive
         fi
     else
-        echo ""
-        print_info "System Drive Allocation"
-        print_info "Would you like to allocate specific storage locations?"
-        list_available_drives
-        
-        read -p "Allocate storage locations now? (y/N): " allocate_drive
-        if [[ $allocate_drive =~ ^[Yy]$ ]]; then
-            allocate_system_drive
+    echo ""
+    print_info "System Drive Allocation"
+    print_info "Would you like to allocate specific storage locations?"
+    list_available_drives
+    
+    read -p "Allocate storage locations now? (y/N): " allocate_drive
+    if [[ $allocate_drive =~ ^[Yy]$ ]]; then
+        allocate_system_drive
         fi
     fi
     
@@ -160,10 +160,10 @@ show_status() {
     print_info "Storage Status:"
     if [ "$API_AVAILABLE" -eq 1 ]; then
         storage_status=$(curl -s "$API_BASE_URL/storage/status" 2>/dev/null || echo "{}")
-        if echo "$storage_status" | grep -q "total_drives"; then
-            echo "$storage_status" | jq '.' 2>/dev/null || echo "$storage_status"
-        else
-            print_warning "Could not reach storage service"
+    if echo "$storage_status" | grep -q "total_drives"; then
+        echo "$storage_status" | jq '.' 2>/dev/null || echo "$storage_status"
+    else
+        print_warning "Could not reach storage service"
         fi
     else
         print_warning "Storage API not available yet"
@@ -637,13 +637,13 @@ scan_drives() {
     check_api_available
     if [ "$API_AVAILABLE" -eq 1 ]; then
         local api_url="$API_BASE_URL/storage/drives/scan"
-        
-        print_info "Calling storage service..."
-        response=$(curl -s -X POST "$api_url" 2>/dev/null || echo "{}")
-        
-        if echo "$response" | grep -q "drives"; then
+    
+    print_info "Calling storage service..."
+    response=$(curl -s -X POST "$api_url" 2>/dev/null || echo "{}")
+    
+    if echo "$response" | grep -q "drives"; then
             print_success "Drive scan completed successfully"
-            echo "$response" | jq '.' 2>/dev/null || echo "$response"
+        echo "$response" | jq '.' 2>/dev/null || echo "$response"
         else
             print_warning "Scan failed or could not reach storage service"
         fi
@@ -826,7 +826,7 @@ main() {
         test) test_storage ;;
         interactive) interactive_menu ;;
         help|--help|-h) show_help ;;
-        *) 
+        *)
             print_error "Unknown option: $1"
             show_help
             exit 1

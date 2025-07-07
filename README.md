@@ -35,39 +35,61 @@ git clone https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 ```
 
-### 2. Place your ZIM files (and other pile files) in the `./storage/piles` directory
-- This directory is shared between the backend, kiwix-serve, and the UI.
-- Any `.zim` file you want to serve or view must be placed here.
+### 2. Storage Management
+BabylonPiles uses Docker volumes for storage, which provides:
+- **Fast Docker builds** (no large files in build context)
+- **Persistent data** (survives container restarts)
+- **Easy access** via the provided access script
 
-### 3. Start everything with the unified script
-**Linux/macOS:**
+**Access your data:**
 ```bash
-./babylonpiles.sh
+# Linux/macOS
+chmod +x access_storage.sh
+./access_storage.sh
+
+# Windows (using Git Bash, WSL, or PowerShell)
+# Option 1: Use Git Bash (recommended)
+./access_storage.sh
+
+# Option 2: Use PowerShell
+docker run --rm -v babylonpiles_piles:/data -v ${PWD}/your_zim_files:/source alpine sh -c "cp /source/*.zim /data/"
 ```
 
-**Windows:**
-```cmd
-babylonpiles.bat
+This script allows you to:
+- Copy data between Docker volumes and local directories
+- View volume information and sizes
+- Open volumes in your file manager
+
+### 3. Adding ZIM Files
+To add ZIM files to your BabylonPiles system:
+
+**Option 1: Use the access script (recommended)**
+```bash
+./access_storage.sh
+# Choose option 2 to copy from local directory to Docker volumes
 ```
 
-```powershell
-.\babylonpiles.bat
+**Option 2: Direct volume access**
+```bash
+# Copy files directly to the Docker volume
+docker run --rm -v babylonpiles_piles:/data -v $(pwd)/your_zim_files:/source alpine sh -c "cp /source/*.zim /data/"
 ```
 
+**Option 3: Through the web interface**
+- Upload files via the web UI at http://localhost:3000
 
-The script provides an interactive menu for:
-- Starting/stopping services
-- **Multi-location storage allocation** during startup
-- Managing storage drives
-- Viewing logs
-- System status
+### 4. Start everything with Docker Compose
+```bash
+docker-compose up --build -d
+```
 
-### 4. Access the app
+### 5. Access the app
 - Backend API: http://localhost:8080
 - API Documentation: http://localhost:8080/docs
 - Frontend: http://localhost:3000
+- Kiwix-Serve: http://localhost:8081
 
-### 5. Alternative: Manual Docker commands
+### 6. Alternative: Manual Docker commands
 ```bash
 docker-compose up --build -d  # Start everything
 docker-compose down           # Stop everything
@@ -95,14 +117,12 @@ docker-compose logs -f        # View logs
 - All file operations are reflected instantly in the UI
 
 ### Storage Management
-- **Multi-location storage allocation** during system startup
+- **Docker volume-based storage** for optimal performance
 - **Browse storage locations** with file system navigation
 - **Storage analysis** with detailed space usage and drive information
-- **Connect/Disconnect drives** to add or remove storage from the system
-- **Reallocate storage** with data migration between drives
+- **Easy data access** via provided access script
 - **Real-time progress tracking** during data transfers
 - **Automatic validation** of storage space requirements
-- **Safe reallocation** that prevents data loss during transfers
 
 ### Quick Add & Pile Management
 - Add new content sources (piles) manually or with one click from popular repositories
@@ -139,6 +159,9 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - **Drag-and-drop file move and parent folder navigation**
 - **Kiwix-Serve integration for .ZIM files**
 - **Backend move API**
+- **Optimized Docker builds and startup**
+- **Docker volume-based storage for fast builds**
+- **Access script for easy data management**
 
 ### In Progress / Planned
 - Streamline Docker images for size and performance
@@ -163,7 +186,7 @@ See [RoadMap.md](RoadMap.md) and [TODO.md](TODO.md) for details.
 ## Documentation
 
 - [Installation Guide](docs/INSTALL.md) - Complete Docker setup instructions
-- [Storage Guide](docs/STORAGE.md) - Comprehensive storage management guide including multi-location allocation
+- [Storage Guide](docs/STORAGE.md) - Comprehensive storage management guide
 - [Project Summary](PROJECT_SUMMARY.md) - Detailed project overview
 - [TODO List](TODO.md) - Development roadmap and priorities
 - [API Documentation](docs/API.md) - Backend API reference
@@ -179,7 +202,33 @@ Open source under the [License](LICENSE)
 ## Contributing
 
 **We welcome contributions!**
-Please check our [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development instructions.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and setup instructions.
+
+---
+
+## Troubleshooting
+
+### Slow Docker Startup
+If you experience slow startup times with "exporting to image" or "exporting layers" messages:
+```bash
+# Clean up Docker system (removes unused images, containers, volumes, and build cache)
+docker system prune -a --volumes
+```
+
+### Build Issues
+```bash
+# Clean build cache and rebuild
+docker system prune -f
+docker-compose build --no-cache
+```
+
+### Access Storage Data
+Use the provided access script to easily manage your data:
+- **Linux/macOS**: `./access_storage.sh`
+- **Windows**: Use Git Bash, WSL, or PowerShell with Docker commands
+
+For more troubleshooting, see the [Installation Guide](docs/INSTALL.md).
 
 ---
 
@@ -189,135 +238,18 @@ Please check our [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development
 
 1. **Install Docker and Docker Compose**
 2. **Clone this repository**
-3. **Place your ZIM files (and other pile files) in the `./storage/piles` directory**
-   - This directory is shared between the backend, kiwix-serve, and the UI.
-   - Any `.zim` file you want to serve or view must be placed here.
-4. **Start the services:**
+3. **Configure storage locations (optional):**
+   - Edit `storage/Dockerfile` and `backend/Dockerfile` to set your desired paths
+   - Update `docker-compose.yml` volume mappings to match
+4. **Add ZIM files to the system**
+   - Use the access script: `./access_storage.sh`
+   - Or upload via the web interface at http://localhost:3000
+   - Or copy directly to Docker volumes using Docker commands
+5. **Start the services:**
    ```sh
-   docker-compose up -d
+   docker-compose up --build -d
    ```
-5. **Access the UI:**
+6. **Access the UI:**
    - Open [http://localhost:3000](http://localhost:3000) in your browser.
-6. **Browse, download, and view ZIM files**
-   - Use the UI to browse files in `./storage/piles`.
-   - To view a ZIM file with Kiwix, use the "Open ZIM" action in the UI.
 
-## Adding Content
-- To add new ZIM files, simply copy them into the `./storage/piles` directory.
-- The backend and Kiwix-Serve will automatically detect new files after a restart.
-- To remove content, delete the file from `./storage/piles` and restart the services if needed.
 
-## Troubleshooting
-- If a ZIM file does not appear in the UI or is not served by Kiwix:
-  1. Make sure it is in the `./storage/piles` directory.
-  2. Restart the services:
-     ```sh
-     docker-compose down
-     docker-compose up -d
-     ```
-- If you see connection errors on `localhost:8081`, ensure at least one `.zim` file is present in `./storage/piles`.
-
-## Directory Structure
-- `./storage/piles` — Place all your ZIM and pile files here.
-- This directory is shared by all relevant services via Docker Compose.
-
-## No More Docker Volumes for Piles
-- The system now uses a host directory for piles, making file management easy from your OS.
-
----
-For more details, see the comments in `docker-compose.yml`.
-
-## Storage Configuration
-
-BabylonPiles uses `./storage/info` in the current directory by default.
-
-### Default Configuration
-```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default location
-  environment:
-    - MAX_DRIVES=1
-```
-
-### Add More Drives
-
-Edit `docker-compose.yml` and add your drives:
-
-**Windows:**
-```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default
-    - D:\:/mnt/hdd2
-    - E:\:/mnt/hdd3
-  environment:
-    - MAX_DRIVES=3  # Match number of drives
-```
-
-**Linux:**
-```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default
-    - /media/hdd1:/mnt/hdd2
-    - /mnt/storage:/mnt/hdd3
-  environment:
-    - MAX_DRIVES=3  # Match number of drives
-```
-
-Then restart:
-```bash
-docker-compose down
-docker-compose up -d
-```
-
-## Management Commands
-
-### Stop Services
-```bash
-docker-compose down
-```
-
-### Restart Services
-```bash
-docker-compose restart
-```
-
-### View Storage Logs
-```bash
-docker-compose logs storage
-```
-
-### Rebuild Services
-```bash
-docker-compose up --build -d
-```
-
-## Troubleshooting
-
-### Check Service Health
-```bash
-docker-compose ps
-```
-
-### View Recent Logs
-```bash
-docker-compose logs --tail=50
-```
-
-### Check Storage Status
-```bash
-curl http://localhost:8001/status
-```
-
-### Verify Storage Setup
-- Web interface: http://localhost:3000 → Storage
-- API docs: http://localhost:8080/docs
-- Logs: `docker-compose logs storage`
-
-### Reset Everything
-```bash
-docker-compose down -v
-docker-compose up --build -d
-```

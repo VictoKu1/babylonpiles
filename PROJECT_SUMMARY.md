@@ -17,19 +17,36 @@ git clone https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 ```
 
-### 2. Start everything with Docker Compose
+### 2. Storage Management
+BabylonPiles uses Docker volumes for optimal performance:
+- **Fast Docker builds** (no large files in build context)
+- **Persistent data** (survives container restarts)
+- **Easy access** via provided access script
+
+**Access your data:**
+```bash
+# Linux/macOS
+chmod +x access_storage.sh
+./access_storage.sh
+
+# Windows (using Git Bash, WSL, or PowerShell)
+# Option 1: Use Git Bash (recommended)
+./access_storage.sh
+
+# Option 2: Use PowerShell
+docker run --rm -v babylonpiles_piles:/data -v ${PWD}/your_zim_files:/source alpine sh -c "cp /source/*.zim /data/"
+```
+
+### 3. Start everything with Docker Compose
 ```bash
 docker-compose up --build -d
 ```
 
-> Or, if you prefer, you can use the provided helper script for your OS:
-> - On Linux/Mac/WSL: `./babylonpiles.sh`
-> - On Windows: `babylonpiles.bat`
-
-### 3. Access the app
+### 4. Access the app
 - Backend API: http://localhost:8080
 - API Documentation: http://localhost:8080/docs
 - Frontend: http://localhost:3000
+- Kiwix-Serve: http://localhost:8081
 
 ---
 
@@ -55,6 +72,9 @@ docker-compose up --build -d
 - Mode switching (Learn/Store)
 - Environment-based configuration
 - Comprehensive logging and monitoring
+- **Docker volume-based storage** for optimal performance
+- **Access script** for easy data management
+- **Drag-and-drop file management** in web UI
 
 ## 📁 Project Structure
 
@@ -69,13 +89,18 @@ babylonpiles/
 │   │   └── schemas/           # Pydantic schemas
 │   ├── main.py               # Application entry point
 │   └── requirements.txt      # Python dependencies
-├── frontend/                  # React frontend (scaffolded)
+├── frontend/                  # React frontend
 │   ├── src/                  # React components
 │   ├── package.json          # Node.js dependencies
 │   └── index.html           # Main HTML file
-├── scripts/                   # Utility scripts (Docker only)
+├── storage/                   # Storage service
+│   ├── storage_service.py    # Storage management service
+│   └── Dockerfile           # Storage service container
+├── access_storage.sh         # Data access script
 ├── docs/                      # Documentation
-│   └── INSTALL.md           # Installation guide
+│   ├── INSTALL.md           # Installation guide
+│   ├── STORAGE.md           # Storage management guide
+│   └── API.md               # API documentation
 ├── TODO.md                   # Development roadmap
 └── README.md                 # Project overview
 ```
@@ -90,13 +115,36 @@ babylonpiles/
 5. **System Monitoring**: Real-time system metrics
 6. **Authentication**: JWT-based authentication
 7. **Docker-first deployment**
-8. **Storage Management**: Multi-location storage allocation, drive detection, allocation, and data migration
+8. **Docker volume-based storage** for optimal performance
+9. **Access script** for easy data management
+10. **Drag-and-drop file management** in web UI
+11. **Kiwix-Serve integration** for .ZIM files
+
+---
+
+## Storage System
+
+BabylonPiles uses Docker volumes for storage, which provides:
+- **Fast access** without bind mount overhead
+- **Persistent data** across container restarts
+- **Easy management** via access script
+
+### Volume Structure
+- `babylonpiles_data`: Backend data (SQLite database, logs)
+- `babylonpiles_piles`: ZIM files and other pile content
+- `babylonpiles_storage`: Storage service data and metadata
+- `babylonpiles_service_data`: Storage service internal data
+
+### Data Access
+Use the provided access script to manage your data:
+- **Linux/macOS**: `./access_storage.sh`
+- **Windows**: Use Git Bash, WSL, or PowerShell with Docker commands
 
 ---
 
 ## System Integration
 
-- **Auto-mount**: External HDD/SSD detection and mounting (handled by Docker volume configuration)
+- **Docker volumes**: Automatic volume management and persistence
 - **Network Configuration**: WiFi hotspot and DHCP server setup (if supported by host, not managed by BabylonPiles)
 
 ---
@@ -150,7 +198,7 @@ Open source under the [License](LICENSE)
 - **Local Files**: Manual file upload and management
 
 ### ✅ Setup & Deployment
-- **Automated Setup Script**: Complete Raspberry Pi installation
+- **Docker Compose**: Complete containerized deployment
 - **Mode Switch Script**: Command-line mode switching
 - **Configuration Management**: Environment-based configuration
 - **Logging System**: Comprehensive logging and monitoring
@@ -168,14 +216,18 @@ babylonpiles/
 │   │   └── schemas/           # Pydantic schemas
 │   ├── main.py               # Application entry point
 │   └── requirements.txt      # Python dependencies
-├── frontend/                  # React frontend (scaffolded)
+├── frontend/                  # React frontend
 │   ├── src/                  # React components
 │   ├── package.json          # Node.js dependencies
 │   └── index.html           # Main HTML file
-├── scripts/                   # Utility scripts
-│   ├── mode-switch.sh       # Mode switching script
+├── storage/                   # Storage service
+│   ├── storage_service.py    # Storage management service
+│   └── Dockerfile           # Storage service container
+├── access_storage.sh         # Data access script
 ├── docs/                      # Documentation
-│   └── INSTALL.md           # Installation guide
+│   ├── INSTALL.md           # Installation guide
+│   ├── STORAGE.md           # Storage management guide
+│   └── API.md               # API documentation
 ├── TODO.md                   # Development roadmap
 └── README.md                 # Project overview
 ```
@@ -190,7 +242,10 @@ babylonpiles/
 5. **System Monitoring**: Real-time system metrics
 6. **Authentication**: JWT-based authentication
 7. **Docker-first deployment**
-8. **Storage Management**: Multi-location storage allocation, drive detection, allocation, and data migration
+8. **Docker volume-based storage** for optimal performance
+9. **Access script** for easy data management
+10. **Drag-and-drop file management** in web UI
+11. **Kiwix-Serve integration** for .ZIM files
 
 ### 🔄 In Progress
 1. **Frontend Development**: React UI components
