@@ -17,8 +17,14 @@ cd babylonpiles
 
 ### 3. Start the development environment
 ```bash
+# Option 1: Use the unified script (recommended)
+./babylonpiles.sh
+
+# Option 2: Manual Docker commands
 docker-compose up --build -d
 ```
+
+**Note:** The unified script now includes multi-location storage allocation during startup, allowing you to configure specific storage locations for development.
 
 ### 4. Access the app
 - Backend API: http://localhost:8080

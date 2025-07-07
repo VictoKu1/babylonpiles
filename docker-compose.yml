@@ -5,12 +5,15 @@ services:
       - "8080:8080"
     volumes:
       - babylonpiles_data:/mnt/babylonpiles/data
-      - babylonpiles_piles:/mnt/babylonpiles/piles
+      - ./storage/piles:/mnt/babylonpiles/piles
     environment:
       - DATA_DIR=/mnt/babylonpiles/data
       - PILES_DIR=/mnt/babylonpiles/piles
+      - STORAGE_URL=http://storage:8001
     networks:
       - babylonpiles-network
+    depends_on:
+      - storage
     restart: unless-stopped
 
   frontend:
@@ -26,13 +29,35 @@ services:
       - backend
     restart: unless-stopped
 
+  storage:
+    build: ./storage
+    ports:
+      - "8001:8001"
+    volumes:
+      # Default storage location in current directory
+      - ./storage/info:/mnt/hdd1
+
+      # Additional drives (uncomment and customize as needed)
+      # - D:\:/mnt/hdd2
+      # - E:\:/mnt/hdd3
+      # - F:\:/mnt/hdd4
+
+      # Storage container data
+      - storage_data:/app/data
+    environment:
+      - MAX_DRIVES=1 # Update this to match the number of drives above
+      - CHUNK_SIZE=104857600
+    networks:
+      - babylonpiles-network
+    restart: unless-stopped
+
   kiwix-serve:
     image: ghcr.io/kiwix/kiwix-tools:latest
-    command: kiwix-serve --port=8080 --address=0.0.0.0 --verbose /data
+    command: /bin/sh -c "kiwix-serve --port=8080 --address=0.0.0.0 /data/*.zim"
     ports:
       - "8081:8080"
     volumes:
-      - babylonpiles_data:/data
+      - ./storage/piles:/data
     networks:
       - babylonpiles-network
     restart: unless-stopped
@@ -40,7 +65,8 @@ services:
 volumes:
   babylonpiles_data:
   babylonpiles_piles:
+  storage_data:
 
 networks:
   babylonpiles-network:
-    driver: bridge 
+    driver: bridge

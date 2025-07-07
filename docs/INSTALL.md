@@ -1,57 +1,67 @@
-# Installation Guide (Docker-Only)
-
-BabylonPiles is now **Docker-only**. The only supported way to run the app is with Docker Compose. All previous OS-specific instructions have been removed for simplicity and reliability.
-
----
+# Installation
 
 ## Prerequisites
 
 - Docker (with Docker Compose support)
 
----
+## Quick Start
 
-## 1. Clone the repository
-
+### 1. Clone and Start
 ```bash
 git clone https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
+docker-compose up -d
 ```
 
----
+### 2. Access Services
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8080
+- **API Docs**: http://localhost:8080/docs
 
-## 2. Start with Docker Compose
+## Management Commands
 
 ```bash
-docker-compose up --build -d
+docker-compose down           # Stop services
+docker-compose restart        # Restart services
+docker-compose logs -f        # View logs
+docker-compose up --build -d  # Rebuild and start
 ```
 
----
+## Storage Configuration
 
-## 3. Access the app
+By default, BabylonPiles uses `./storage/info` in the current directory.
 
-- Backend API: http://localhost:8080
-- API Documentation: http://localhost:8080/docs
-- Frontend: http://localhost:3000
+To add more drives, edit `docker-compose.yml`:
 
----
-
-## 4. Stopping and restarting
-
-```bash
-docker-compose down  # Stop everything
-docker-compose restart  # Restart services
-docker-compose logs -f  # View logs
+**Windows:**
+```yaml
+storage:
+  volumes:
+    - ./storage/info:/mnt/hdd1  # Default
+    - D:\:/mnt/hdd2
+    - E:\:/mnt/hdd3
+  environment:
+    - MAX_DRIVES=3  # Match number of drives
 ```
 
----
+**Linux:**
+```yaml
+storage:
+  volumes:
+    - ./storage/info:/mnt/hdd1  # Default
+    - /media/hdd1:/mnt/hdd2
+    - /mnt/storage:/mnt/hdd3
+  environment:
+    - MAX_DRIVES=3  # Match number of drives
+```
+
+Then restart: `docker-compose down && docker-compose up -d`
 
 ## Troubleshooting
 
-- **Docker not found**: Install Docker from [docker.com](https://www.docker.com/products/docker-desktop/).
-- **Port already in use**: Make sure nothing else is running on ports 8080 (backend) or 3000 (frontend).
-- **File permission issues**: Use `sudo` if needed, or ensure your user is in the `docker` group.
-- **Frontend not loading**: Wait a minute for the frontend to build, then refresh http://localhost:3000.
-- **Backend not loading**: Check logs with `docker-compose logs -f`.
+- **Port conflicts**: Ensure ports 8080 and 3000 are free
+- **Permission issues**: Run Docker as administrator (Windows) or add user to docker group (Linux)
+- **Services not starting**: Check logs with `docker-compose logs -f`
 
 ---
 
@@ -65,4 +75,4 @@ A: Pull the latest code and re-run `docker-compose up --build -d`.
 
 ---
 
-For more details, see the [README.md](../README.md) or [API documentation](API.md). 
+For more details, see the [README.md](../README.md), [Storage Guide](STORAGE.md), or [API documentation](API.md). 

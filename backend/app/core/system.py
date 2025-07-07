@@ -15,24 +15,25 @@ from app.models.system_status import SystemStatus
 
 logger = logging.getLogger(__name__)
 
+
 class SystemManager:
     """Manages system monitoring and resources"""
-    
+
     def __init__(self):
         self._monitoring_task = None
         self._monitoring_interval = 30  # seconds
         self._running = False
-    
+
     async def start_monitoring(self):
         """Start system monitoring"""
         if self._running:
             logger.warning("System monitoring already running")
             return
-        
+
         self._running = True
         self._monitoring_task = asyncio.create_task(self._monitor_system())
         logger.info("System monitoring started")
-    
+
     async def stop_monitoring(self):
         """Stop system monitoring"""
         self._running = False
@@ -43,7 +44,7 @@ class SystemManager:
             except asyncio.CancelledError:
                 pass
         logger.info("System monitoring stopped")
-    
+
     async def _monitor_system(self):
         """System monitoring loop"""
         while self._running:
@@ -55,7 +56,7 @@ class SystemManager:
             except Exception as e:
                 logger.error(f"Error in system monitoring: {e}")
                 await asyncio.sleep(self._monitoring_interval)
-    
+
     async def _update_system_status(self):
         """Update system status in database"""
         try:
@@ -63,145 +64,192 @@ class SystemManager:
             cpu_usage = psutil.cpu_percent(interval=1)
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage(settings.data_dir)
-            
+
             # Get storage information
             storage_info = await self._get_storage_info()
-            
+
             # Get content statistics
             content_stats = await self._get_content_statistics()
-            
+
             # Get network information
             network_info = await self._get_network_info()
-            
+
             # Get system information
             system_info = await self._get_system_info()
-            
+
             # Update database
             async with AsyncSessionLocal() as session:
                 status = await session.get(SystemStatus, 1)
                 if not status:
                     status = SystemStatus()
                     session.add(status)
-                
+
                 # Update metrics
                 status.cpu_usage_percent = cpu_usage
                 status.memory_usage_percent = memory.percent
                 status.disk_usage_percent = (disk.used / disk.total) * 100
-                
+
                 # Update storage
                 status.total_storage_bytes = storage_info.get("total_bytes")
                 status.used_storage_bytes = storage_info.get("used_bytes")
                 status.available_storage_bytes = storage_info.get("available_bytes")
-                
+
                 # Update content statistics
                 status.total_piles = content_stats.get("total_piles", 0)
                 status.active_piles = content_stats.get("active_piles", 0)
                 status.downloading_piles = content_stats.get("downloading_piles", 0)
-                status.total_content_size_bytes = content_stats.get("total_size_bytes", 0)
-                
+                status.total_content_size_bytes = content_stats.get(
+                    "total_size_bytes", 0
+                )
+
                 # Update system info
                 status.system_info = system_info
                 status.network_info = network_info
-                
+
                 await session.commit()
-                
+
         except Exception as e:
             logger.error(f"Error updating system status: {e}")
-    
+
     async def _get_storage_info(self) -> Dict[str, Any]:
         """Get storage information"""
         try:
             # Check main data directory
             data_path = Path(settings.data_dir)
+
+            # Check if the data directory exists and has actual content
             if not data_path.exists():
-                return {"error": "Data directory does not exist"}
-            
+                # Return zero storage when no data directory exists
+                return {
+                    "total_bytes": 0,
+                    "used_bytes": 0,
+                    "available_bytes": 0,
+                    "usage_percent": 0,
+                    "no_storage_allocated": True,
+                }
+
+            # Check if the directory is empty or only contains system files
+            try:
+                contents = list(data_path.iterdir())
+                # If directory is empty or only contains hidden/system files, consider it as no storage allocated
+                if not contents or all(item.name.startswith(".") for item in contents):
+                    return {
+                        "total_bytes": 0,
+                        "used_bytes": 0,
+                        "available_bytes": 0,
+                        "usage_percent": 0,
+                        "no_storage_allocated": True,
+                    }
+            except (PermissionError, OSError):
+                # If we can't read the directory, assume no storage allocated
+                return {
+                    "total_bytes": 0,
+                    "used_bytes": 0,
+                    "available_bytes": 0,
+                    "usage_percent": 0,
+                    "no_storage_allocated": True,
+                }
+
             # Get disk usage
             disk_usage = psutil.disk_usage(str(data_path))
-            
+
+            # Calculate actual used space (excluding system files)
+            actual_used = 0
+            try:
+                for root, dirs, files in os.walk(str(data_path)):
+                    for file in files:
+                        try:
+                            file_path = os.path.join(root, file)
+                            if os.path.exists(file_path):
+                                actual_used += os.path.getsize(file_path)
+                        except (OSError, PermissionError):
+                            continue
+            except (OSError, PermissionError):
+                actual_used = disk_usage.used
+
             return {
                 "total_bytes": disk_usage.total,
-                "used_bytes": disk_usage.used,
+                "used_bytes": actual_used,
                 "available_bytes": disk_usage.free,
-                "usage_percent": (disk_usage.used / disk_usage.total) * 100
+                "usage_percent": (
+                    (actual_used / disk_usage.total) * 100
+                    if disk_usage.total > 0
+                    else 0
+                ),
+                "no_storage_allocated": actual_used == 0,
             }
         except Exception as e:
             logger.error(f"Error getting storage info: {e}")
             return {"error": str(e)}
-    
+
     async def _get_content_statistics(self) -> Dict[str, Any]:
         """Get content statistics"""
         try:
             from app.models.pile import Pile
             from sqlalchemy import select, func
-            
+
             async with AsyncSessionLocal() as session:
                 # Get pile counts
-                result = await session.execute(
-                    select(func.count(Pile.id))
-                )
+                result = await session.execute(select(func.count(Pile.id)))
                 total_piles = result.scalar() or 0
-                
+
                 result = await session.execute(
                     select(func.count(Pile.id)).where(Pile.is_active == True)
                 )
                 active_piles = result.scalar() or 0
-                
+
                 result = await session.execute(
                     select(func.count(Pile.id)).where(Pile.is_downloading == True)
                 )
                 downloading_piles = result.scalar() or 0
-                
+
                 # Get total content size
                 result = await session.execute(
                     select(func.sum(Pile.file_size)).where(Pile.file_size.isnot(None))
                 )
                 total_size_bytes = result.scalar() or 0
-                
+
                 return {
                     "total_piles": total_piles,
                     "active_piles": active_piles,
                     "downloading_piles": downloading_piles,
-                    "total_size_bytes": total_size_bytes
+                    "total_size_bytes": total_size_bytes,
                 }
-                
+
         except Exception as e:
             logger.error(f"Error getting content statistics: {e}")
             return {
                 "total_piles": 0,
                 "active_piles": 0,
                 "downloading_piles": 0,
-                "total_size_bytes": 0
+                "total_size_bytes": 0,
             }
-    
+
     async def _get_network_info(self) -> Dict[str, Any]:
         """Get network information"""
         try:
             network_info = {}
-            
+
             # Get network interfaces
             for interface, addrs in psutil.net_if_addrs().items():
-                network_info[interface] = {
-                    "addresses": [],
-                    "mac": None
-                }
-                
+                network_info[interface] = {"addresses": [], "mac": None}
+
                 for addr in addrs:
                     if addr.family == 2:  # AF_INET
                         network_info[interface]["addresses"].append(addr.address)
                     elif addr.family == 17:  # AF_LINK
                         network_info[interface]["mac"] = addr.address
-            
+
             # Get network connections
             connections = psutil.net_connections()
             network_info["connections"] = len(connections)
-            
+
             return network_info
-            
+
         except Exception as e:
             logger.error(f"Error getting network info: {e}")
             return {"error": str(e)}
-    
+
     async def _get_system_info(self) -> Dict[str, Any]:
         """Get system information"""
         try:
@@ -213,12 +261,12 @@ class SystemManager:
                 "memory_total": psutil.virtual_memory().total,
                 "boot_time": datetime.fromtimestamp(psutil.boot_time()).isoformat(),
                 "hostname": psutil.sys.gethostname(),
-                "pid": os.getpid()
+                "pid": os.getpid(),
             }
         except Exception as e:
             logger.error(f"Error getting system info: {e}")
             return {"error": str(e)}
-    
+
     async def get_system_status(self) -> Dict[str, Any]:
         """Get current system status"""
         try:
@@ -231,24 +279,26 @@ class SystemManager:
         except Exception as e:
             logger.error(f"Error getting system status: {e}")
             return {"error": str(e)}
-    
+
     async def get_storage_usage(self) -> Dict[str, Any]:
         """Get detailed storage usage"""
         try:
             storage_info = await self._get_storage_info()
-            
+
             # Get directory sizes
             piles_dir = Path(settings.piles_dir)
             if piles_dir.exists():
-                piles_size = sum(f.stat().st_size for f in piles_dir.rglob('*') if f.is_file())
+                piles_size = sum(
+                    f.stat().st_size for f in piles_dir.rglob("*") if f.is_file()
+                )
                 storage_info["piles_size_bytes"] = piles_size
-            
+
             return storage_info
         except Exception as e:
             logger.error(f"Error getting storage usage: {e}")
             return {"error": str(e)}
-    
+
     async def cleanup(self):
         """Cleanup system manager"""
         logger.info("Cleaning up SystemManager...")
-        await self.stop_monitoring() 
+        await self.stop_monitoring()

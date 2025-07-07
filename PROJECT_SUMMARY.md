@@ -23,8 +23,8 @@ docker-compose up --build -d
 ```
 
 > Or, if you prefer, you can use the provided helper script for your OS:
-> - On Linux/Mac/WSL: `./run-docker.sh`
-> - On Windows: `run-docker.bat`
+> - On Linux/Mac/WSL: `./babylonpiles.sh`
+> - On Windows: `babylonpiles.bat`
 
 ### 3. Access the app
 - Backend API: http://localhost:8080
@@ -90,6 +90,7 @@ babylonpiles/
 5. **System Monitoring**: Real-time system metrics
 6. **Authentication**: JWT-based authentication
 7. **Docker-first deployment**
+8. **Storage Management**: Multi-location storage allocation, drive detection, allocation, and data migration
 
 ---
 
@@ -189,6 +190,7 @@ babylonpiles/
 5. **System Monitoring**: Real-time system metrics
 6. **Authentication**: JWT-based authentication
 7. **Docker-first deployment**
+8. **Storage Management**: Multi-location storage allocation, drive detection, allocation, and data migration
 
 ### 🔄 In Progress
 1. **Frontend Development**: React UI components
@@ -251,14 +253,14 @@ babylonpiles/
 
 ## 📊 Supported Content Sources
 
-| Source | Type | Status | Description |
-|--------|------|--------|-------------|
-| Kiwix | ZIM files | ✅ Complete | Wikipedia, medical, educational content |
-| HTTP/HTTPS | Direct download | ✅ Complete | Any downloadable file |
-| BitTorrent | Torrent files | ✅ Basic | Large file downloads |
-| Project Gutenberg | Books | 🔄 Planned | Public domain literature |
-| OpenStreetMap | Maps | 🔄 Planned | Offline map data |
-| Internet Archive | Media | 🔄 Planned | Videos, documents, software |
+| Source            | Type            | Status     | Description                             |
+| ----------------- | --------------- | ---------- | --------------------------------------- |
+| Kiwix             | ZIM files       | ✅ Complete | Wikipedia, medical, educational content |
+| HTTP/HTTPS        | Direct download | ✅ Complete | Any downloadable file                   |
+| BitTorrent        | Torrent files   | ✅ Basic    | Large file downloads                    |
+| Project Gutenberg | Books           | 🔄 Planned  | Public domain literature                |
+| OpenStreetMap     | Maps            | 🔄 Planned  | Offline map data                        |
+| Internet Archive  | Media           | 🔄 Planned  | Videos, documents, software             |
 
 ## 🎉 Success Metrics
 
