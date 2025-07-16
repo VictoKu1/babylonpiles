@@ -492,7 +492,6 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
     """Validate if a URL is accessible"""
     try:
         # Use the module-level constant for allowed domains
-        allowed_domains = ALLOWED_DOMAINS
         parsed_url = urlparse(url)
         if not parsed_url.scheme or not parsed_url.netloc or parsed_url.scheme not in ('http', 'https'):
             return {
