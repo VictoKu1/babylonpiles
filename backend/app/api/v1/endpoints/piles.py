@@ -490,8 +490,9 @@ async def download_pile_source(
 @router.post("/validate-url")
 async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
     """Validate if a URL is accessible"""
-    allowed_domains = {"example.com", "another-allowed-domain.com"}
     try:
+        # Use the module-level constant for allowed domains
+        allowed_domains = ALLOWED_DOMAINS
         parsed_url = urlparse(url)
         if not parsed_url.scheme or not parsed_url.netloc:
             return {
