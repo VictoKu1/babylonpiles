@@ -491,6 +491,41 @@ async def download_pile_source(
 async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
     """Validate if a URL is accessible"""
     try:
+        # Use the module-level constant for allowed domains
+        parsed_url = urlparse(url)
+        if not parsed_url.scheme or not parsed_url.netloc or parsed_url.scheme not in ('http', 'https'):
+            return {
+                "success": False,
+                "valid": False,
+                "message": "Invalid URL format or unsupported scheme. Only 'http' and 'https' are allowed."
+            }
+        # Resolve the hostname to an IP address
+        hostname = parsed_url.hostname
+        try:
+            resolved_ips = [addr[4][0] for addr in await asyncio.getaddrinfo(hostname, None)]
+        except socket.gaierror:
+            return {
+                "success": False,
+                "valid": False,
+                "message": "DNS resolution failed for the hostname"
+            }
+        # Validate all resolved IPs
+        for resolved_ip in resolved_ips:
+            parsed_ip = ipaddress.ip_address(resolved_ip)
+            if (parsed_ip.is_private or parsed_ip.is_loopback or 
+                parsed_ip.is_link_local or parsed_ip.is_unspecified or parsed_ip.is_multicast):
+                return {
+                    "success": False,
+                    "valid": False,
+                    "message": "Access to private, loopback, link-local, unspecified, or multicast IPs is not allowed"
+                }
+        # Check if the domain is in the allowed list
+        if not any(hostname.lower().endswith(f".{domain.lower()}") or hostname.lower() == domain.lower() for domain in allowed_domains):
+            return {
+                "success": False,
+                "valid": False,
+                "message": "Domain not allowed"
+            }
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as response:
                 if response.status == 200:
