@@ -503,13 +503,23 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
         # Resolve the hostname to an IP address
         hostname = parsed_url.hostname
         try:
-            resolved_ip = (await asyncio.get_event_loop().getaddrinfo(hostname, None))[0][4][0]
+            resolved_ips = [addr[4][0] for addr in await asyncio.get_event_loop().getaddrinfo(hostname, None)]
         except socket.gaierror:
             return {
                 "success": False,
                 "valid": False,
                 "message": "DNS resolution failed for the hostname"
             }
+        # Validate all resolved IPs
+        for resolved_ip in resolved_ips:
+            parsed_ip = ipaddress.ip_address(resolved_ip)
+            if (parsed_ip.is_private or parsed_ip.is_loopback or 
+                parsed_ip.is_link_local or parsed_ip.is_unspecified or parsed_ip.is_multicast):
+                return {
+                    "success": False,
+                    "valid": False,
+                    "message": "Access to private, loopback, link-local, unspecified, or multicast IPs is not allowed"
+                }
         # Check if the domain is in the allowed list
         if not any(hostname.lower().endswith(f".{domain.lower()}") or hostname.lower() == domain.lower() for domain in allowed_domains):
             return {
