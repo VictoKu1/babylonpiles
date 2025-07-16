@@ -511,7 +511,7 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
                 "message": "DNS resolution failed for the hostname"
             }
         # Check if the domain is in the allowed list
-        if not any(hostname.endswith(f".{domain}") or hostname == domain for domain in allowed_domains):
+        if not any(hostname.lower().endswith(f".{domain.lower()}") or hostname.lower() == domain.lower() for domain in allowed_domains):
             return {
                 "success": False,
                 "valid": False,
