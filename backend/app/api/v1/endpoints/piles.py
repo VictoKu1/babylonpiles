@@ -494,11 +494,11 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
         # Use the module-level constant for allowed domains
         allowed_domains = ALLOWED_DOMAINS
         parsed_url = urlparse(url)
-        if not parsed_url.scheme or not parsed_url.netloc:
+        if not parsed_url.scheme or not parsed_url.netloc or parsed_url.scheme not in ('http', 'https'):
             return {
                 "success": False,
                 "valid": False,
-                "message": "Invalid URL format"
+                "message": "Invalid URL format or unsupported scheme. Only 'http' and 'https' are allowed."
             }
         # Resolve the hostname to an IP address
         hostname = parsed_url.hostname
