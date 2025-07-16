@@ -502,7 +502,7 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
         # Resolve the hostname to an IP address
         hostname = parsed_url.hostname
         try:
-            resolved_ips = [addr[4][0] for addr in await asyncio.get_event_loop().getaddrinfo(hostname, None)]
+            resolved_ips = [addr[4][0] for addr in await asyncio.getaddrinfo(hostname, None)]
         except socket.gaierror:
             return {
                 "success": False,
