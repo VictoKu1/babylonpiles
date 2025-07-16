@@ -3,7 +3,7 @@ uvicorn[standard]==0.24.0
 httpx==0.25.2
 psutil==5.9.6
 pydantic==2.5.0
-python-multipart==0.0.6
+python-multipart==0.0.18
 aiofiles==23.2.1
 asyncio-mqtt==0.16.1
 redis==5.0.1
