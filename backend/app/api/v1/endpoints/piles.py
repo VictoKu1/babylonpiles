@@ -519,11 +519,12 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
             }
         # Check if the resolved IP is private or loopback
         parsed_ip = ipaddress.ip_address(resolved_ip)
-        if parsed_ip.is_private or parsed_ip.is_loopback:
+        if (parsed_ip.is_private or parsed_ip.is_loopback or 
+            parsed_ip.is_link_local or parsed_ip.is_unspecified or parsed_ip.is_multicast):
             return {
                 "success": False,
                 "valid": False,
-                "message": "Access to private or loopback IPs is not allowed"
+                "message": "Access to private, loopback, link-local, unspecified, or multicast IPs is not allowed"
             }
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as response:
