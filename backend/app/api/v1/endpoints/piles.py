@@ -518,7 +518,6 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
                 "message": "Domain not allowed"
             }
         # Check if the resolved IP is private or loopback
-        import ipaddress
         parsed_ip = ipaddress.ip_address(resolved_ip)
         if parsed_ip.is_private or parsed_ip.is_loopback:
             return {
