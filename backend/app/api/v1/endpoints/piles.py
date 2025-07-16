@@ -490,7 +490,32 @@ async def download_pile_source(
 @router.post("/validate-url")
 async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
     """Validate if a URL is accessible"""
+    allowed_domains = {"example.com", "another-allowed-domain.com"}
     try:
+        parsed_url = urlparse(url)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            return {
+                "success": False,
+                "valid": False,
+                "message": "Invalid URL format"
+            }
+        # Resolve the hostname to an IP address
+        hostname = parsed_url.hostname
+        resolved_ip = (await asyncio.get_event_loop().getaddrinfo(hostname, None))[0][4][0]
+        # Check if the domain is in the allowed list
+        if hostname not in allowed_domains:
+            return {
+                "success": False,
+                "valid": False,
+                "message": "Domain not allowed"
+            }
+        # Check if the resolved IP is private or loopback
+        if resolved_ip.startswith("10.") or resolved_ip.startswith("192.168.") or resolved_ip.startswith("172.") or resolved_ip == "127.0.0.1":
+            return {
+                "success": False,
+                "valid": False,
+                "message": "Access to private or loopback IPs is not allowed"
+            }
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as response:
                 if response.status == 200:
