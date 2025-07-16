@@ -502,7 +502,14 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
             }
         # Resolve the hostname to an IP address
         hostname = parsed_url.hostname
-        resolved_ip = (await asyncio.get_event_loop().getaddrinfo(hostname, None))[0][4][0]
+        try:
+            resolved_ip = (await asyncio.get_event_loop().getaddrinfo(hostname, None))[0][4][0]
+        except socket.gaierror:
+            return {
+                "success": False,
+                "valid": False,
+                "message": "DNS resolution failed for the hostname"
+            }
         # Check if the domain is in the allowed list
         if hostname not in allowed_domains:
             return {
