@@ -19,6 +19,10 @@ BabylonPiles is an open-source, modular, offline-first knowledge server. It lets
 - 🖱️ **Drag-and-drop file management**: Move files and folders in the web UI with native drag-and-drop
 - 📁 **Parent folder navigation**: Move files up a level using the '..' entry in every folder
 - 🗂️ **Kiwix-Serve integration**: Serve and browse .ZIM files (offline Wikipedia, etc.) over your network
+- 📤 **Seamless file uploads**: Drag files directly from desktop to browser for instant upload
+- 📊 **Accurate storage metrics**: Dashboard shows actual content storage vs system disk usage
+- 🔐 **Enhanced permissions**: Improved file permission management with better error handling
+- 🧪 **Comprehensive testing**: Organized test suite with automated test runner
 
 ---
 
@@ -53,7 +57,6 @@ babylonpiles.bat
 ```powershell
 .\babylonpiles.bat
 ```
-
 
 The script provides an interactive menu for:
 - Starting/stopping services
@@ -91,8 +94,10 @@ docker-compose logs -f        # View logs
 ### File Browser
 - Browse, upload, download, and delete files and folders from the web UI
 - **Drag and drop** files/folders onto folders or the '..' entry to move them
+- **Seamless desktop uploads**: Drag files directly from your desktop to the browser window for instant upload
 - '..' entry lets you move items up to the parent folder
 - All file operations are reflected instantly in the UI
+- **Visual upload feedback** with progress indicators and overlays
 
 ### Storage Management
 - **Multi-location storage allocation** during system startup
@@ -103,6 +108,13 @@ docker-compose logs -f        # View logs
 - **Real-time progress tracking** during data transfers
 - **Automatic validation** of storage space requirements
 - **Safe reallocation** that prevents data loss during transfers
+
+### Dashboard & Analytics
+- **Accurate storage metrics**: Dashboard shows actual content storage instead of system disk usage
+- **Real-time updates**: Storage information updates immediately after file operations
+- **Content vs System storage**: Clear distinction between user content and system storage
+- **Visual progress indicators**: Upload and download progress tracking
+- **System health monitoring**: CPU, memory, and disk usage monitoring
 
 ### Quick Add & Pile Management
 - Add new content sources (piles) manually or with one click from popular repositories
@@ -116,6 +128,13 @@ docker-compose logs -f        # View logs
 
 ### Backend Move API
 - Move or rename files/folders via POST `/api/v1/files/move` (used by the frontend drag-and-drop)
+
+### Testing
+- Comprehensive test suite for all functionality
+- Run individual tests: `python tests/test_storage_api.py`
+- Run all tests: `python tests/run_all_tests.py`
+- Test categories: API, System, and Functionality tests
+- See [Test Suite Documentation](tests/README.md) for detailed information
 
 ---
 
@@ -139,6 +158,11 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - **Drag-and-drop file move and parent folder navigation**
 - **Kiwix-Serve integration for .ZIM files**
 - **Backend move API**
+- **Seamless drag and drop file uploads from desktop**
+- **Accurate dashboard storage metrics (content vs system storage)**
+- **Enhanced file permission management with improved error handling**
+- **Real-time storage updates and visual feedback**
+- **Comprehensive test suite organization and documentation**
 
 ### In Progress / Planned
 - Streamline Docker images for size and performance
@@ -167,6 +191,7 @@ See [RoadMap.md](RoadMap.md) and [TODO.md](TODO.md) for details.
 - [Project Summary](PROJECT_SUMMARY.md) - Detailed project overview
 - [TODO List](TODO.md) - Development roadmap and priorities
 - [API Documentation](docs/API.md) - Backend API reference
+- [Test Suite](tests/README.md) - Comprehensive test documentation and execution guide
 
 ---
 
@@ -198,126 +223,3 @@ Please check our [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development
    ```
 5. **Access the UI:**
    - Open [http://localhost:3000](http://localhost:3000) in your browser.
-6. **Browse, download, and view ZIM files**
-   - Use the UI to browse files in `./storage/piles`.
-   - To view a ZIM file with Kiwix, use the "Open ZIM" action in the UI.
-
-## Adding Content
-- To add new ZIM files, simply copy them into the `./storage/piles` directory.
-- The backend and Kiwix-Serve will automatically detect new files after a restart.
-- To remove content, delete the file from `./storage/piles` and restart the services if needed.
-
-## Troubleshooting
-- If a ZIM file does not appear in the UI or is not served by Kiwix:
-  1. Make sure it is in the `./storage/piles` directory.
-  2. Restart the services:
-     ```sh
-     docker-compose down
-     docker-compose up -d
-     ```
-- If you see connection errors on `localhost:8081`, ensure at least one `.zim` file is present in `./storage/piles`.
-
-## Directory Structure
-- `./storage/piles` — Place all your ZIM and pile files here.
-- This directory is shared by all relevant services via Docker Compose.
-
-## No More Docker Volumes for Piles
-- The system now uses a host directory for piles, making file management easy from your OS.
-
----
-For more details, see the comments in `docker-compose.yml`.
-
-## Storage Configuration
-
-BabylonPiles uses `./storage/info` in the current directory by default.
-
-### Default Configuration
-```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default location
-  environment:
-    - MAX_DRIVES=1
-```
-
-### Add More Drives
-
-Edit `docker-compose.yml` and add your drives:
-
-**Windows:**
-```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default
-    - D:\:/mnt/hdd2
-    - E:\:/mnt/hdd3
-  environment:
-    - MAX_DRIVES=3  # Match number of drives
-```
-
-**Linux:**
-```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default
-    - /media/hdd1:/mnt/hdd2
-    - /mnt/storage:/mnt/hdd3
-  environment:
-    - MAX_DRIVES=3  # Match number of drives
-```
-
-Then restart:
-```bash
-docker-compose down
-docker-compose up -d
-```
-
-## Management Commands
-
-### Stop Services
-```bash
-docker-compose down
-```
-
-### Restart Services
-```bash
-docker-compose restart
-```
-
-### View Storage Logs
-```bash
-docker-compose logs storage
-```
-
-### Rebuild Services
-```bash
-docker-compose up --build -d
-```
-
-## Troubleshooting
-
-### Check Service Health
-```bash
-docker-compose ps
-```
-
-### View Recent Logs
-```bash
-docker-compose logs --tail=50
-```
-
-### Check Storage Status
-```bash
-curl http://localhost:8001/status
-```
-
-### Verify Storage Setup
-- Web interface: http://localhost:3000 → Storage
-- API docs: http://localhost:8080/docs
-- Logs: `docker-compose logs storage`
-
-### Reset Everything
-```bash
-docker-compose down -v
-docker-compose up --build -d
-```
