@@ -6,6 +6,14 @@ interface FileItem {
   is_dir: boolean;
   size?: number;
   path: string;
+  is_public?: boolean;
+  metadata?: {
+    creator: string;
+    created_at: string;
+    modified_at: string;
+    size: number;
+    is_dir: boolean;
+  };
 }
 
 interface DownloadStatus {
@@ -36,6 +44,13 @@ export default function Browse() {
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   // Download status state
   const [downloadStatus, setDownloadStatus] = useState<Record<string, DownloadStatus>>({});
+  // Metadata modal state
+  const [showMetadataModal, setShowMetadataModal] = useState<boolean>(false);
+  const [metadataInfo, setMetadataInfo] = useState<any>(null);
+  const [metadataLoading, setMetadataLoading] = useState<boolean>(false);
+  // Desktop drag and drop state
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [dragUploading, setDragUploading] = useState<boolean>(false);
 
   const fetchFiles = async (newPath: string) => {
     setLoading(true);
@@ -48,7 +63,9 @@ export default function Browse() {
         name: item.name,
         is_dir: item.is_dir,
         size: item.size,
-        path: newPath ? `${newPath}/${item.name}` : item.name
+        path: newPath ? `${newPath}/${item.name}` : item.name,
+        is_public: item.is_public,
+        metadata: item.metadata
       })));
       setPath(data.path);
     } catch (e: any) {
@@ -329,9 +346,235 @@ export default function Browse() {
     }
   }, [draggedItem, dragOverPath]);
 
+  const handleTogglePermission = async (item: FileItem) => {
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/v1/files/permission/${encodeURIComponent(item.path)}/toggle`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Permission toggled:", result);
+        
+        // Show success notification
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+        notification.textContent = result.message || 'Permission updated successfully';
+        document.body.appendChild(notification);
+        
+        // Remove notification after 3 seconds
+        setTimeout(() => {
+          notification.style.transform = 'translateX(100%)';
+          setTimeout(() => document.body.removeChild(notification), 300);
+        }, 3000);
+        
+        // Refresh the file list to get updated permissions
+        fetchFiles(path);
+      } else {
+        let errorMessage = 'Failed to toggle permission';
+        
+        try {
+          const errorData = await response.json();
+          console.error("Permission toggle failed:", errorData);
+          
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          } else if (typeof errorData === 'string') {
+            errorMessage = errorData;
+          } else {
+            errorMessage = `Server error: ${response.status}`;
+          }
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
+          errorMessage = `Server error: ${response.status}`;
+        }
+        
+        // Show error notification
+        const errorNotification = document.createElement('div');
+        errorNotification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+        errorNotification.textContent = errorMessage;
+        document.body.appendChild(errorNotification);
+        
+        // Remove error notification after 5 seconds
+        setTimeout(() => {
+          errorNotification.style.transform = 'translateX(100%)';
+          setTimeout(() => document.body.removeChild(errorNotification), 300);
+        }, 5000);
+      }
+    } catch (error) {
+      console.error("Error toggling permission:", error);
+      
+      // Show error notification
+      const errorNotification = document.createElement('div');
+      errorNotification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+      errorNotification.textContent = 'Network error: Unable to toggle permission';
+      document.body.appendChild(errorNotification);
+      
+      // Remove error notification after 5 seconds
+      setTimeout(() => {
+        errorNotification.style.transform = 'translateX(100%)';
+        setTimeout(() => document.body.removeChild(errorNotification), 300);
+      }, 5000);
+    }
+  };
+
+  const getPermissionIcon = (isPublic: boolean) => {
+    return isPublic ? "🌐" : "🔒";
+  };
+
+  const getPermissionTooltip = (isPublic: boolean) => {
+    return isPublic ? "Public - Click to make private" : "Private - Click to make public";
+  };
+
+  const handleShowMetadata = async (item: FileItem) => {
+    setMetadataLoading(true);
+    setShowMetadataModal(true);
+    
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/v1/files/metadata/${encodeURIComponent(item.path)}`
+      );
+      
+      if (response.ok) {
+        const result = await response.json();
+        setMetadataInfo(result.data);
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to get metadata:", errorData);
+        alert(`Failed to get metadata: ${errorData.detail}`);
+      }
+    } catch (error) {
+      console.error("Error getting metadata:", error);
+      alert("Error getting metadata");
+    } finally {
+      setMetadataLoading(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString();
+    } catch {
+      return dateString;
+    }
+  };
+
+  // Desktop drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    setDragUploading(true);
+    
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file as File);
+        formData.append('path', path);
+
+        const res = await fetch('http://localhost:8080/api/v1/files/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.detail || `Upload failed for ${(file as File).name}`);
+        }
+      }
+
+      // Show a more user-friendly success message
+      const message = files.length === 1 
+        ? `File "${(files[0] as File).name}" added to drive successfully!`
+        : `${files.length} files added to drive successfully!`;
+      
+      // Use a custom notification instead of alert
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+      notification.textContent = message;
+      document.body.appendChild(notification);
+      
+      // Remove notification after 3 seconds
+      setTimeout(() => {
+        notification.style.transform = 'translateX(100%)';
+        setTimeout(() => document.body.removeChild(notification), 300);
+      }, 3000);
+      
+      fetchFiles(path); // Refresh the file list
+    } catch (e: any) {
+      // Show a user-friendly error notification
+      const errorNotification = document.createElement('div');
+      errorNotification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+      errorNotification.textContent = `Failed to add files: ${e.message}`;
+      document.body.appendChild(errorNotification);
+      
+      // Remove error notification after 5 seconds
+      setTimeout(() => {
+        errorNotification.style.transform = 'translateX(100%)';
+        setTimeout(() => document.body.removeChild(errorNotification), 300);
+      }, 5000);
+    } finally {
+      setDragUploading(false);
+    }
+  };
+
   return (
-    <div className="p-6">
+    <div 
+      className={`p-6 min-h-screen ${isDragOver ? 'bg-blue-50 border-2 border-dashed border-blue-400' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <h1 className="text-2xl font-bold mb-4">File Browser</h1>
+      
+      {/* Drag and drop upload indicator */}
+      {isDragOver && (
+        <div className="fixed inset-0 bg-blue-500 bg-opacity-30 flex items-center justify-center z-50 pointer-events-none">
+          <div className="bg-white p-6 rounded-xl shadow-2xl border-2 border-dashed border-blue-500 transform scale-105 transition-all duration-200">
+            <div className="text-center">
+              <div className="text-5xl mb-3">📁</div>
+              <div className="text-lg font-bold text-blue-600 mb-1">Drop to Add Files</div>
+              <div className="text-sm text-gray-500">Files will be added to: <span className="font-mono text-blue-600">{path || 'root'}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Upload progress indicator */}
+      {dragUploading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl shadow-2xl">
+            <div className="text-center">
+              <div className="text-3xl mb-3">📤</div>
+              <div className="text-lg font-bold mb-2 text-blue-600">Adding Files to Drive</div>
+              <div className="text-sm text-gray-600 mb-3">Please wait while files are being uploaded</div>
+              <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Drag-and-drop debug info */}
       {draggedItem && (
         <div className="mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-yellow-800">
@@ -367,6 +610,8 @@ export default function Browse() {
         </div>
       </div>
 
+
+
       {/* Error and Loading */}
       {loading && <div className="text-blue-600 mb-2">Loading...</div>}
       {error && <div className="text-red-600 mb-2">{error}</div>}
@@ -379,6 +624,8 @@ export default function Browse() {
               <th className="text-left px-4 py-2 font-medium text-gray-700">Name</th>
               <th className="text-left px-4 py-2 font-medium text-gray-700">Type</th>
               <th className="text-left px-4 py-2 font-medium text-gray-700">Size</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-700">Access</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-700">Info</th>
               <th className="text-left px-4 py-2 font-medium text-gray-700">Actions</th>
             </tr>
           </thead>
@@ -427,6 +674,24 @@ export default function Browse() {
                   {formatFileSize(item.size)}
                 </td>
                 <td className="px-4 py-2">
+                  <button
+                    onClick={() => handleTogglePermission(item)}
+                    className="text-lg hover:scale-110 transition-transform"
+                    title={getPermissionTooltip(item.is_public || false)}
+                  >
+                    {getPermissionIcon(item.is_public || false)}
+                  </button>
+                </td>
+                <td className="px-4 py-2">
+                  <button
+                    onClick={() => handleShowMetadata(item)}
+                    className="text-lg hover:scale-110 transition-transform text-blue-600"
+                    title="View file information"
+                  >
+                    ℹ️
+                  </button>
+                </td>
+                <td className="px-4 py-2">
                   <div className="flex space-x-2">
                     {!item.is_dir && (
                       <button 
@@ -449,7 +714,7 @@ export default function Browse() {
             ))}
             {items.length === 0 && !loading && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                   No files or folders found
                 </td>
               </tr>
@@ -653,6 +918,154 @@ export default function Browse() {
               </a>
               <button
                 onClick={() => setShowViewer(false)}
+                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metadata Modal */}
+      {showMetadataModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">
+                {metadataLoading ? "Loading..." : metadataInfo?.name || "File Information"}
+              </h2>
+              <button
+                onClick={() => setShowMetadataModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            {metadataLoading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-2 text-gray-600">Loading file information...</p>
+              </div>
+            ) : metadataInfo ? (
+              <div className="space-y-4">
+                {/* Basic Information */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-2">Basic Information</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-600">Name:</span>
+                      <p className="text-gray-900">{metadataInfo.name}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Type:</span>
+                      <p className="text-gray-900">{metadataInfo.is_dir ? "Folder" : "File"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Size:</span>
+                      <p className="text-gray-900">{metadataInfo.size_formatted}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Access:</span>
+                      <p className="text-gray-900">
+                        {metadataInfo.is_public ? "🌐 Public" : "🔒 Private"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Creator Information */}
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-blue-900 mb-2">Creator Information</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-blue-700">Created by:</span>
+                      <p className="text-blue-900">{metadataInfo.creator}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-700">Created:</span>
+                      <p className="text-blue-900">{formatDate(metadataInfo.created_at)}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-700">Created ago:</span>
+                      <p className="text-blue-900">{metadataInfo.created_ago}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-700">Modified:</span>
+                      <p className="text-blue-900">{formatDate(metadataInfo.modified_at)}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-700">Modified ago:</span>
+                      <p className="text-blue-900">{metadataInfo.modified_ago}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* File Details */}
+                {!metadataInfo.is_dir && (
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-green-900 mb-2">File Details</h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="font-medium text-green-700">Extension:</span>
+                        <p className="text-green-900">{metadataInfo.file_info.extension || "None"}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-green-700">MIME Type:</span>
+                        <p className="text-green-900">{metadataInfo.file_info.mime_type}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Permissions */}
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-yellow-900 mb-2">Permissions</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-yellow-700">Owner Read:</span>
+                      <p className="text-yellow-900">{metadataInfo.permissions.owner_read ? "✅ Yes" : "❌ No"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-yellow-700">Owner Write:</span>
+                      <p className="text-yellow-900">{metadataInfo.permissions.owner_write ? "✅ Yes" : "❌ No"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-yellow-700">Public Read:</span>
+                      <p className="text-yellow-900">{metadataInfo.permissions.public_read ? "✅ Yes" : "❌ No"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-yellow-700">Public Write:</span>
+                      <p className="text-yellow-900">{metadataInfo.permissions.public_write ? "✅ Yes" : "❌ No"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* System Information */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-2">System Information</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-600">Inode:</span>
+                      <p className="text-gray-900">{metadataInfo.file_info.inode}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">Device:</span>
+                      <p className="text-gray-900">{metadataInfo.file_info.device}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                Failed to load file information
+              </div>
+            )}
+            
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowMetadataModal(false)}
                 className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
               >
                 Close
