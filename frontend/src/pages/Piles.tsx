@@ -340,12 +340,13 @@ export function Piles() {
 
   useEffect(() => {
     loadPiles();
+  }, []);
 
-    // Set up periodic refresh to update download progress
+  // Poll for updates every 2 seconds to show real-time download progress
+  useEffect(() => {
     const interval = setInterval(() => {
       loadPiles();
-    }, 2000); // Refresh every 2 seconds
-
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -416,6 +417,12 @@ export function Piles() {
 
   const handleDownload = async (pile: Pile) => {
     if (!pile.id) return;
+
+    // Prevent duplicate downloads
+    if (pile.is_downloading) {
+      alert("This pile is already being downloaded. Please wait for it to complete.");
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -996,9 +1003,14 @@ export function Piles() {
                       <div className="flex space-x-2">
                         <button
                           onClick={() => handleDownload(pile)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
+                          disabled={pile.is_downloading}
+                          className={`text-sm ${
+                            pile.is_downloading
+                              ? "text-gray-400 cursor-not-allowed"
+                              : "text-blue-600 hover:text-blue-800"
+                          }`}
                         >
-                          Download
+                          {pile.is_downloading ? "Downloading..." : "Download"}
                         </button>
                         <button
                           onClick={() => handleDelete(pile)}

@@ -368,6 +368,47 @@ async def zim_viewer(file_path: str):
             detail=f"Error serving ZIM viewer: {str(e)}"
         )
 
+@router.get("/download-status")
+async def get_download_status() -> Dict[str, Any]:
+    """Get status of currently downloading files"""
+    try:
+        from app.models.pile import Pile
+        from sqlalchemy import select
+        from app.core.database import get_db
+        
+        # Get database session
+        async for db in get_db():
+            # Get all piles that are currently downloading
+            result = await db.execute(
+                select(Pile).where(Pile.is_downloading == True)
+            )
+            downloading_piles = result.scalars().all()
+            
+            # Create a map of file paths to download status
+            download_status = {}
+            for pile in downloading_piles:
+                if pile.file_path:
+                    # Extract just the filename from the full path
+                    filename = os.path.basename(pile.file_path)
+                    download_status[filename] = {
+                        "pile_id": pile.id,
+                        "pile_name": pile.name,
+                        "progress": pile.download_progress or 0.0,
+                        "is_downloading": pile.is_downloading,
+                        "file_path": pile.file_path
+                    }
+            
+            return {
+                "success": True,
+                "data": download_status
+            }
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting download status: {str(e)}"
+        )
+
 def format_file_size(size_bytes: int) -> str:
     """Format file size in human readable format"""
     if size_bytes == 0:

@@ -30,6 +30,12 @@ interface DashboardData {
   systemMode: string;
   internetAvailable: boolean;
   recentPiles: Pile[];
+  currentlyDownloading: {
+    id: number;
+    name: string;
+    display_name: string;
+    progress: number;
+  }[];
 }
 
 export function Dashboard() {
@@ -49,6 +55,7 @@ export function Dashboard() {
     systemMode: "store",
     internetAvailable: false,
     recentPiles: [],
+    currentlyDownloading: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +107,14 @@ export function Dashboard() {
           return dateB - dateA;
         })
         .slice(0, 5);
+
+      // Get currently downloading piles for display
+      const currentlyDownloading = piles
+        .filter((pile: Pile) => pile.is_downloading)
+        .map((pile: Pile) => ({
+          ...pile,
+          progress: pile.download_progress || 0
+        }));
 
       // Fetch system status
       const statusResponse = await fetch(
@@ -165,6 +180,7 @@ export function Dashboard() {
         systemMode: currentMode,
         internetAvailable,
         recentPiles,
+        currentlyDownloading, // Add this to the interface
       });
     } catch (err) {
       console.error("Error loading dashboard data:", err);
@@ -311,6 +327,48 @@ export function Dashboard() {
                         {formatBytes(pile.file_size)}
                       </p>
                     )}
+                  </div>
+                  <span
+                    className={`px-2 py-1 text-xs rounded ${
+                      pile.source_type === "kiwix"
+                        ? "bg-blue-100 text-blue-800"
+                        : pile.source_type === "http"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-purple-100 text-purple-800"
+                    }`}
+                  >
+                    {pile.source_type.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Currently Downloading Section */}
+      {data.currentlyDownloading.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">
+            Currently Downloading
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.currentlyDownloading.map((pile) => (
+              <div
+                key={pile.id}
+                className="border border-gray-200 rounded-lg p-4"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h3 className="font-medium text-gray-900 text-sm">
+                      {pile.display_name}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {pile.name}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Progress: {pile.progress}%
+                    </p>
                   </div>
                   <span
                     className={`px-2 py-1 text-xs rounded ${

@@ -8,6 +8,14 @@ interface FileItem {
   path: string;
 }
 
+interface DownloadStatus {
+  pile_id: number;
+  pile_name: string;
+  progress: number;
+  is_downloading: boolean;
+  file_path: string;
+}
+
 export default function Browse() {
   const [path, setPath] = useState<string>('');
   const [items, setItems] = useState<FileItem[]>([]);
@@ -26,6 +34,8 @@ export default function Browse() {
   // Drag-and-drop state
   const [draggedItem, setDraggedItem] = useState<FileItem | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  // Download status state
+  const [downloadStatus, setDownloadStatus] = useState<Record<string, DownloadStatus>>({});
 
   const fetchFiles = async (newPath: string) => {
     setLoading(true);
@@ -48,9 +58,28 @@ export default function Browse() {
     }
   };
 
+  const fetchDownloadStatus = async () => {
+    try {
+      const res = await fetch('http://localhost:8080/api/v1/files/download-status');
+      if (res.ok) {
+        const data = await res.json();
+        setDownloadStatus(data.data || {});
+      }
+    } catch (e) {
+      console.error('Error fetching download status:', e);
+    }
+  };
+
   useEffect(() => {
     fetchFiles('');
     setHistory(['']);
+    fetchDownloadStatus();
+  }, []);
+
+  // Poll for download status updates every 2 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchDownloadStatus, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   const goTo = (newPath: string) => {
@@ -165,6 +194,33 @@ export default function Browse() {
       unitIndex++;
     }
     return `${size.toFixed(1)} ${units[unitIndex]}`;
+  };
+
+  const getDownloadStatus = (fileName: string): DownloadStatus | null => {
+    return downloadStatus[fileName] || null;
+  };
+
+  const renderDownloadProgress = (fileName: string) => {
+    const status = getDownloadStatus(fileName);
+    if (!status || !status.is_downloading) return null;
+
+    return (
+      <div className="flex items-center space-x-2 mt-1">
+        <div className="flex items-center space-x-1">
+          <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse"></div>
+          <span className="text-xs text-blue-600">Downloading...</span>
+        </div>
+        <div className="w-16 bg-gray-200 rounded-full h-1">
+          <div
+            className="bg-blue-600 h-1 rounded-full transition-all duration-300"
+            style={{ width: `${status.progress * 100}%` }}
+          ></div>
+        </div>
+        <span className="text-xs text-gray-600">
+          {Math.round(status.progress * 100)}%
+        </span>
+      </div>
+    );
   };
 
   const handleViewFile = async (file: FileItem) => {
@@ -348,16 +404,21 @@ export default function Browse() {
                 style={{ background: dragOverPath === item.path ? '#ffe082' : undefined, border: dragOverPath === item.path ? '2px dashed #ffb300' : undefined }}
               >
                 <td className="px-4 py-2">
-                  {item.is_dir ? (
-                    <button 
-                      className="text-blue-600 hover:underline flex items-center"
-                      onClick={() => goTo(path ? `${path}/${item.name}` : item.name)}
-                    >
-                      📁 {item.name}
-                    </button>
-                  ) : (
-                    <span className="flex items-center">📄 {item.name}</span>
-                  )}
+                  <div>
+                    {item.is_dir ? (
+                      <button 
+                        className="text-blue-600 hover:underline flex items-center"
+                        onClick={() => goTo(path ? `${path}/${item.name}` : item.name)}
+                      >
+                        📁 {item.name}
+                      </button>
+                    ) : (
+                      <div>
+                        <span className="flex items-center">📄 {item.name}</span>
+                        {renderDownloadProgress(item.name)}
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-2 text-gray-600">
                   {item.is_dir ? 'Folder' : 'File'}

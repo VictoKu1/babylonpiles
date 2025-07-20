@@ -402,26 +402,35 @@ async def download_pile_source(
                 detail="Pile has no source URL"
             )
         
+        # Check if already downloading
+        if pile.is_downloading:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Pile is already being downloaded"
+            )
+        
         # Set downloading status
         pile.is_downloading = True
         pile.download_progress = 0.0
         await db.commit()
         
+        # Create data directory if it doesn't exist
+        data_dir = Path(settings.data_dir)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename from URL
+        parsed_url = urlparse(pile.source_url)
+        filename = os.path.basename(parsed_url.path)
+        if not filename:
+            filename = f"{pile.name}.{pile.source_type}"
+        
+        file_path = data_dir / filename
+        temp_file_path = data_dir / f"{filename}.tmp"
+        
         try:
-            # Create data directory if it doesn't exist
-            data_dir = Path(settings.data_dir)
-            data_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Generate filename from URL
-            parsed_url = urlparse(pile.source_url)
-            filename = os.path.basename(parsed_url.path)
-            if not filename:
-                filename = f"{pile.name}.{pile.source_type}"
-            
-            file_path = data_dir / filename
-            
-            # Download file
-            async with aiohttp.ClientSession() as session:
+            # Download file with proper error handling
+            timeout = aiohttp.ClientTimeout(total=3600)  # 1 hour timeout
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(pile.source_url) as response:
                     if response.status != 200:
                         raise HTTPException(
@@ -434,15 +443,30 @@ async def download_pile_source(
                     total_size = int(content_length) if content_length else None
                     downloaded_size = 0
                     
-                    with open(file_path, 'wb') as f:
+                    # Download to temporary file first
+                    with open(temp_file_path, 'wb') as f:
                         async for chunk in response.content.iter_chunked(8192):
                             f.write(chunk)
                             downloaded_size += len(chunk)
                             
-                            # Update progress (but don't commit too frequently)
-                            if total_size and downloaded_size % (1024 * 1024) == 0:  # Every 1MB
+                            # Update progress more frequently for better UX
+                            if total_size and downloaded_size % (512 * 1024) == 0:  # Every 512KB
                                 pile.download_progress = downloaded_size / total_size
                                 await db.commit()
+                    
+                    # Verify download completed successfully
+                    if total_size and downloaded_size != total_size:
+                        raise Exception(f"Download incomplete: {downloaded_size}/{total_size} bytes")
+                    
+                    # Move temporary file to final location
+                    if temp_file_path.exists():
+                        temp_file_path.rename(file_path)
+                    else:
+                        raise Exception("Temporary file not found after download")
+            
+            # Verify file exists and has content
+            if not file_path.exists() or file_path.stat().st_size == 0:
+                raise Exception("Downloaded file is empty or missing")
             
             # Update pile with file information
             pile.file_path = str(file_path)
@@ -462,6 +486,13 @@ async def download_pile_source(
             }
             
         except Exception as e:
+            # Clean up temporary file if it exists
+            if temp_file_path.exists():
+                try:
+                    temp_file_path.unlink()
+                except:
+                    pass
+            
             # Reset downloading status on error
             try:
                 pile.is_downloading = False
