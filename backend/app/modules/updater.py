@@ -19,6 +19,7 @@ from app.models.update_log import UpdateLog
 from app.modules.sources.kiwix import KiwixSource
 from app.modules.sources.torrent import TorrentSource
 from app.modules.sources.http import HTTPSource
+from app.modules.sources.gutenberg import GutenbergSource
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class ContentUpdater:
             "kiwix": KiwixSource(),
             "torrent": TorrentSource(),
             "http": HTTPSource(),
+            "gutenberg": GutenbergSource(),
             "local": None  # Local files don't need a source handler
         }
         self._active_downloads = {}

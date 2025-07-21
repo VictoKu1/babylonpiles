@@ -2,7 +2,7 @@
 Piles endpoints for managing content modules
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -13,12 +13,17 @@ from pathlib import Path
 import aiohttp
 import asyncio
 from urllib.parse import urlparse
+import json
+from fastapi import Response
+from bs4 import BeautifulSoup
+import re
 
 from app.core.database import get_db
 from app.core.config import settings
 from app.models.pile import Pile
 from app.models.update_log import UpdateLog
 from app.schemas.pile import PileCreate, PileUpdate, PileResponse
+from app.modules.sources.gutenberg import GutenbergSource
 
 router = APIRouter()
 
@@ -75,6 +80,136 @@ async def get_categories(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting categories: {str(e)}"
         )
+
+@router.get("/sources-list")
+async def get_sources_list():
+    """Serve the sources.json file for Quick Add dynamic source listing (new format)."""
+    import os
+    sources_path = os.path.join(os.path.dirname(__file__), "..", "..", "sources.json")
+    with open(os.path.abspath(sources_path), "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return Response(content=json.dumps(data), media_type="application/json")
+
+@router.post("/add-source")
+async def add_source(request: Request):
+    """Add or update a source in sources.json. Accepts JSON: {name, repo_url, info_url (nullable)}. Returns updated sources list."""
+    data = await request.json()
+    name = data.get('name')
+    repo_url = data.get('repo_url')
+    info_url = data.get('info_url')
+    if not name or not repo_url:
+        raise HTTPException(status_code=400, detail="Name and repo_url are required.")
+    # Path to sources.json
+    import os
+    sources_path = os.path.join(os.path.dirname(__file__), "..", "..", "sources.json")
+    sources_path = os.path.abspath(sources_path)
+    # Load existing sources
+    if os.path.exists(sources_path):
+        with open(sources_path, "r", encoding="utf-8") as f:
+            sources = json.load(f)
+    else:
+        sources = {}
+    # Store info_url as 'None' string if None for frontend compatibility
+    sources[name] = [repo_url, info_url if info_url is not None else 'None']
+    with open(sources_path, "w", encoding="utf-8") as f:
+        json.dump(sources, f, indent=2, ensure_ascii=False)
+    return sources
+
+@router.get("/browse-source")
+async def browse_source(url: str, description_url: str = None):
+    """List the immediate children (files/folders) of a directory URL for any source. Optionally accept a description_url for future use."""
+    import aiohttp
+    import ssl
+    from bs4 import BeautifulSoup
+    import re
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    skip_names = {"Name", "Last modified", "Size", "Description", "README"}
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
+        async with session.get(url) as resp:
+            html = await resp.text()
+            soup = BeautifulSoup(html, "html.parser")
+            items = []
+            pre = soup.find("pre")
+            if pre:
+                for line in pre.text.splitlines():
+                    m = re.match(r"\s*(.+?)\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+([\d\.]+[KMG]?)?", line)
+                    if not m:
+                        continue
+                    name = m.group(1).strip()
+                    last_modified = m.group(2).strip() if m.lastindex >= 2 else None
+                    size_str = m.group(3).strip() if m.lastindex >= 3 else None
+                    size = None
+                    if size_str:
+                        try:
+                            if size_str.endswith("K"):
+                                size = int(float(size_str[:-1]) * 1024)
+                            elif size_str.endswith("M"):
+                                size = int(float(size_str[:-1]) * 1024 * 1024)
+                            elif size_str.endswith("G"):
+                                size = int(float(size_str[:-1]) * 1024 * 1024 * 1024)
+                            else:
+                                size = int(size_str)
+                        except Exception:
+                            size = None
+                    link = pre.find("a", string=name)
+                    if not link:
+                        continue
+                    href = link.get("href")
+                    if (
+                        not href or
+                        name == "Parent Directory" or
+                        name.upper() == "README" or
+                        name in skip_names or
+                        href.startswith("?C=")
+                    ):
+                        continue
+                    is_dir = href.endswith("/")
+                    items.append({
+                        "name": name,
+                        "url": url + href,
+                        "is_dir": is_dir,
+                        "size": size if not is_dir else None,
+                        "last_modified": last_modified
+                    })
+            return {"items": items}
+
+@router.get("/file-info")
+async def file_info(filename: str, description_url: str):
+    """Fetch file info HTML snippet for a given filename from the description_url (e.g., Kiwix library XML)."""
+    import aiohttp
+    from bs4 import BeautifulSoup
+    import re
+    async with aiohttp.ClientSession() as session:
+        async with session.get(description_url) as resp:
+            content = await resp.text()
+            soup = BeautifulSoup(content, "html.parser")
+            # Instead of matching any attribute containing the filename, match the 'name' attribute that starts with the base filename
+            base_filename = filename.rstrip('_')
+            entry = None
+            # Try to match the base filename against the 'url' attribute as well as 'name'
+            for tag in soup.find_all(True):
+                url_attr = tag.attrs.get('url')
+                if url_attr and re.search(rf'{re.escape(base_filename)}', url_attr):
+                    entry = tag
+                    break
+            if not entry:
+                for tag in soup.find_all(True):
+                    name_attr = tag.attrs.get('name')
+                    if name_attr and re.match(rf'^{re.escape(base_filename)}(_|$)', name_attr):
+                        entry = tag
+                        break
+            if not entry:
+                for tag in soup.find_all(True):
+                    if any(filename in str(v) for v in tag.attrs.values()):
+                        entry = tag
+                        break
+            if not entry:
+                entry = soup.find(lambda tag: tag.string and filename in tag.string)
+            if not entry:
+                return Response(content=f'<div>File info for <b>{filename}</b> not found in description file.</div>', media_type="text/html")
+            return Response(content=entry.prettify(), media_type="text/html")
 
 @router.get("/{pile_id}")
 async def get_pile(
@@ -556,3 +691,10 @@ async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
             "valid": False,
             "message": f"Error validating URL: {str(e)}"
         } 
+
+@router.get("/gutenberg-search")
+async def gutenberg_search(query: str):
+    """Search Project Gutenberg books using Gutendex API"""
+    source = GutenbergSource()
+    results = await source.get_available_content(query)
+    return {"success": True, "data": results} 

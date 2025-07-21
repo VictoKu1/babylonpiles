@@ -28,6 +28,15 @@ interface QuickAddSource {
   difficulty: "easy" | "moderate" | "advanced";
 }
 
+interface GutenbergBook {
+  id: number;
+  title: string;
+  authors: { name: string }[];
+  subjects: string[];
+  formats: Record<string, string>;
+  download_count: number;
+}
+
 const QUICK_ADD_SOURCES: QuickAddSource[] = [
   // Lightweight/Moderate-Size Sources
   {
@@ -124,6 +133,586 @@ const QUICK_ADD_SOURCES: QuickAddSource[] = [
   },
 ];
 
+// --- KiwixTreeBrowser Component ---
+interface KiwixNode {
+  name: string;
+  url: string;
+  is_dir: boolean;
+  size: number | null;
+  children?: KiwixNode[];
+  loaded?: boolean;
+  last_modified?: string;
+  loading?: boolean; // Added loading state
+}
+
+function formatFileSize(bytes: number | null | undefined) {
+  if (!bytes) return "-";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+  return `${size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function flattenSelected(node: KiwixNode, selected: Record<string, boolean>): KiwixNode[] {
+  if (!node.is_dir && selected[node.url]) return [node];
+  if (node.is_dir && selected[node.url]) {
+    // If folder is selected, all children are implicitly selected
+    return node.children?.flatMap(child => flattenSelected(child, selected)) || [];
+  }
+  if (node.is_dir) {
+    return node.children?.flatMap(child => flattenSelected(child, selected)) || [];
+  }
+  return [];
+}
+
+// Helper to sum sizes recursively
+function getFolderSize(node: KiwixNode): number | null {
+  if (!node.is_dir) return node.size || 0;
+  if (!node.children) return null;
+  let total = 0;
+  let hasFile = false;
+  for (const child of node.children) {
+    const childSize = getFolderSize(child);
+    if (childSize !== null) {
+      total += childSize;
+      hasFile = true;
+    }
+  }
+  return hasFile ? total : null;
+}
+
+// Helper to get indeterminate state
+function isIndeterminate(node: KiwixNode, selected: Record<string, boolean>): boolean {
+  if (!node.is_dir || !node.children) return false;
+  let checked = 0, unchecked = 0;
+  for (const child of node.children) {
+    if (child.is_dir && child.children) {
+      if (isIndeterminate(child, selected)) return true;
+    }
+    if (selected[child.url]) checked++;
+    else unchecked++;
+  }
+  return checked > 0 && unchecked > 0;
+}
+
+function TreeCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  const ref = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      type="checkbox"
+      ref={ref}
+      checked={checked}
+      onChange={onChange}
+      style={{ marginRight: 4 }}
+    />
+  );
+}
+
+const KiwixTreeBrowser: React.FC<{
+  onDownload: (files: KiwixNode[]) => void;
+}> = ({ onDownload }) => {
+  const [sources, setSources] = useState<{ [name: string]: [string, string] }>({});
+  const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  const [selectedRepoUrl, setSelectedRepoUrl] = useState<string | null>(null);
+  const [selectedDescUrl, setSelectedDescUrl] = useState<string | null>(null);
+  const [root, setRoot] = useState<KiwixNode[]>([]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(false);
+  const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({});
+  const [showModal, setShowModal] = useState(false);
+  const [modalFiles, setModalFiles] = useState<KiwixNode[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [infoModalHtml, setInfoModalHtml] = useState<string | null>(null);
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoModalTitle, setInfoModalTitle] = useState('');
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualRepoUrl, setManualRepoUrl] = useState('');
+  const [manualInfoUrl, setManualInfoUrl] = useState('');
+  const [manualNoInfo, setManualNoInfo] = useState(false);
+  const [manualError, setManualError] = useState('');
+
+  useEffect(() => {
+    fetch("http://localhost:8080/api/v1/piles/sources-list")
+      .then(res => res.json())
+      .then(data => setSources(data));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedSource || !sources[selectedSource]) return;
+    setSelectedRepoUrl(sources[selectedSource][0]);
+    setSelectedDescUrl(sources[selectedSource][1]);
+  }, [selectedSource, sources]);
+
+  useEffect(() => {
+    if (!selectedRepoUrl) return;
+    setLoading(true);
+    fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(selectedRepoUrl)}&description_url=${encodeURIComponent(selectedDescUrl || '')}`)
+      .then(res => res.json())
+      .then(data => setRoot(data.items))
+      .finally(() => setLoading(false));
+  }, [selectedRepoUrl, selectedDescUrl]);
+
+  // Prefetch children recursively in the background
+  async function prefetchChildren(node: KiwixNode, updateNode: (n: KiwixNode) => void) {
+    if (!node.is_dir || node.loaded) return;
+    // Mark as loading
+    updateNode({ ...node, loading: true });
+    const res = await fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
+    const data = await res.json();
+    node.children = data.items;
+    node.loaded = true;
+    updateNode({ ...node, children: node.children, loaded: true, loading: false });
+    // Recursively prefetch children
+    for (const child of node.children) {
+      prefetchChildren(child, updateNode);
+    }
+  }
+
+  useEffect(() => {
+    if (!root.length) return;
+    // Helper to update a node in the root tree by reference
+    const updateNode = (updated: KiwixNode) => {
+      setRoot(r => [...r]);
+    };
+    for (const node of root) {
+      prefetchChildren(node, updateNode);
+    }
+    // eslint-disable-next-line
+  }, [root.length]);
+
+  const loadChildren = async (node: KiwixNode) => {
+    setLoadingFolders(prev => ({ ...prev, [node.url]: true }));
+    const res = await fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
+    const data = await res.json();
+    node.children = data.items;
+    node.loaded = true;
+    setLoadingFolders(prev => ({ ...prev, [node.url]: false }));
+    setRoot(r => [...r]);
+  };
+
+  const toggleExpand = async (node: KiwixNode) => {
+    setExpanded(prev => ({ ...prev, [node.url]: !prev[node.url] }));
+    if (node.is_dir && !node.loaded && !loadingFolders[node.url]) {
+      await loadChildren(node);
+    }
+  };
+
+  const toggleSelect = (node: KiwixNode, checked: boolean) => {
+    const update = (n: KiwixNode, value: boolean): Record<string, boolean> => {
+      let updates: Record<string, boolean> = { [n.url]: value };
+      if (n.is_dir && n.children) {
+        n.children.forEach(child => {
+          updates = { ...updates, ...update(child, value) };
+        });
+      }
+      return updates;
+    };
+    setSelected(prev => ({ ...prev, ...update(node, checked) }));
+  };
+
+  function flattenSelected(node: KiwixNode, selected: Record<string, boolean>): KiwixNode[] {
+    if (!node.is_dir && selected[node.url]) return [node];
+    if (node.is_dir && selected[node.url] && node.children) {
+      return node.children.flatMap(child => flattenSelected(child, selected));
+    }
+    if (node.is_dir && node.children) {
+      return node.children.flatMap(child => flattenSelected(child, selected));
+    }
+    return [];
+  }
+
+  // Helper to extract field values from file names
+  function extractFieldValues(nodes: KiwixNode[], maxFields = 5): Record<string, Set<string>> {
+    const fieldValues: Record<string, Set<string>> = {};
+    function visit(node: KiwixNode) {
+      if (!node.is_dir && node.name.endsWith('.zim')) {
+        const parts = node.name.replace('.zim', '').split('_');
+        for (let i = 0; i < Math.min(parts.length, maxFields); i++) {
+          const key = `field${i+1}`;
+          if (!fieldValues[key]) fieldValues[key] = new Set();
+          fieldValues[key].add(parts[i]);
+        }
+      }
+      if (node.is_dir && node.children) {
+        node.children.forEach(visit);
+      }
+    }
+    nodes.forEach(visit);
+    return fieldValues;
+  }
+
+  // Helper to filter files by selected field values
+  function fileMatchesFilters(node: KiwixNode, filters: Record<string, string | null>, maxFields = 5, searchText = ''): boolean {
+    if (searchText && !node.name.toLowerCase().includes(searchText.toLowerCase())) return false;
+    if (node.is_dir) return true;
+    if (!node.name.endsWith('.zim')) return true;
+    const parts = node.name.replace('.zim', '').split('_');
+    for (let i = 0; i < maxFields; i++) {
+      const key = `field${i+1}`;
+      if (filters[key] && parts[i] !== filters[key]) return false;
+    }
+    return true;
+  }
+
+  const [filters, setFilters] = useState<Record<string, string | null>>({});
+  const maxFields = 5;
+  const fieldValues = React.useMemo(() => extractFieldValues(root, maxFields), [root]);
+
+  const renderNode = (node: KiwixNode, depth = 0): JSX.Element | null => {
+    // If this is a folder, check if any children match the filters/search
+    let visibleChildren: KiwixNode[] = [];
+    if (node.is_dir && node.children) {
+      visibleChildren = node.children.filter(child => fileMatchesFilters(child, filters, maxFields, searchText));
+      // If folder doesn't match search/filter and has no visible children, don't render it
+      if (!fileMatchesFilters(node, filters, maxFields, searchText) && visibleChildren.length === 0) {
+        return null;
+      }
+    } else if (!fileMatchesFilters(node, filters, maxFields, searchText)) {
+      // If file doesn't match, don't render it
+      return null;
+    }
+    const indeterminate = isIndeterminate(node, selected);
+    const size = node.is_dir ? getFolderSize(node) : node.size;
+    return (
+      <div key={node.url} style={{ marginLeft: depth * 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          {node.is_dir ? (
+            <span
+              style={{ cursor: "pointer", marginRight: 4, userSelect: 'none' }}
+              onClick={() => toggleExpand(node)}
+            >
+              {expanded[node.url] ? '▼' : '▶'}
+            </span>
+          ) : (
+            <span style={{ width: 16, display: 'inline-block' }}></span>
+          )}
+          <TreeCheckbox
+            checked={!!selected[node.url]}
+            indeterminate={indeterminate}
+            onChange={e => toggleSelect(node, e.target.checked)}
+          />
+          <span style={{ fontWeight: node.is_dir ? 600 : undefined }}>
+            {node.is_dir ? '📁' : ''} {node.name}
+          </span>
+          {node.last_modified && (
+            <span style={{ marginLeft: 8, color: "#888", fontSize: 12 }}>
+              {node.last_modified}
+            </span>
+          )}
+          {size !== null && (
+            <span style={{ marginLeft: 8, color: "#888", fontSize: 12 }}>
+              {formatFileSize(size)}
+            </span>
+          )}
+          {/* Move the i button here, after name/date/size */}
+          {!node.is_dir && selectedDescUrl && selectedDescUrl !== 'None' && (
+            <button
+              onClick={() => showFileInfo(node.name)}
+              style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}
+              title="Show file info"
+            >
+              ℹ️
+            </button>
+          )}
+          {/* Filtering dropdowns for the currently expanded folder */}
+          {node.is_dir && expanded[node.url] && node.children && (() => {
+            const localFieldValues = extractFieldValues(node.children, maxFields);
+            return Object.entries(localFieldValues).map(([key, values], idx) => (
+              <select
+                key={key}
+                value={filters[key] || ''}
+                onChange={e => setFilters(f => ({ ...f, [key]: e.target.value || null }))}
+                style={{ marginLeft: 8, marginBottom: 0, width: 140, minWidth: 90, maxWidth: 180, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', display: 'inline-block' }}
+              >
+                <option value='' style={{ whiteSpace: 'normal' }}>{`--Filter ${idx + 1}--`}</option>
+                {[...values].sort().map(v => (
+                  <option key={v} value={v} style={{ whiteSpace: 'normal' }}>{v}</option>
+                ))}
+              </select>
+            ));
+          })()}
+          {node.is_dir && node.loading && (
+            <span style={{ marginLeft: 8, color: '#888', fontSize: 12 }}>(calculating...)</span>
+          )}
+        </div>
+        {node.is_dir && expanded[node.url] && visibleChildren.length > 0 && (
+          <div>
+            {visibleChildren.map(child => renderNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const handleDownloadClick = () => {
+    const files = root.flatMap(node => flattenSelected(node, selected));
+    setModalFiles(files);
+    setShowModal(true);
+  };
+
+  const totalSize = modalFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+
+  // Helper to get all visible root node URLs
+  function getAllRootUrls(nodes: KiwixNode[]): string[] {
+    let urls: string[] = [];
+    for (const node of nodes) {
+      urls.push(node.url);
+      if (node.is_dir && node.children) {
+        urls = urls.concat(getAllRootUrls(node.children));
+      }
+    }
+    return urls;
+  }
+
+  function getBaseFilename(filename: string): string {
+    // Remove date and extension (e.g., africanstorybook.org_mul_all_2024-10.zim -> africanstorybook.org_mul_all_)
+    return filename.replace(/_\d{4}-\d{2}\.zim$/, '_');
+  }
+
+  async function showFileInfo(filename: string) {
+    if (!selectedDescUrl) return;
+    const baseFilename = getBaseFilename(filename);
+    setInfoModalTitle(filename);
+    setInfoModalHtml('<div>Loading...</div>');
+    setInfoModalOpen(true);
+    const url = `http://localhost:8080/api/v1/piles/file-info?filename=${encodeURIComponent(baseFilename)}&description_url=${encodeURIComponent(selectedDescUrl)}`;
+    try {
+      const resp = await fetch(url);
+      const html = await resp.text();
+      let infoFields = null;
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const book = doc.querySelector('book');
+        if (book) {
+          infoFields = {
+            title: book.getAttribute('title') || '',
+            description: book.getAttribute('description') || '',
+            language: book.getAttribute('language') || '',
+            creator: book.getAttribute('creator') || '',
+            publisher: book.getAttribute('publisher') || '',
+          };
+        }
+      } catch (e) {
+        // Parsing failed, infoFields remains null
+      }
+      // Only set the modal content after loading is done
+      if (infoFields) {
+        setInfoModalHtml(`
+          <div style='line-height:1.7'>
+            <div><b>Title:</b> ${infoFields.title}</div>
+            <div><b>Description:</b> ${infoFields.description}</div>
+            <div><b>Language:</b> ${infoFields.language}</div>
+            <div><b>Creator:</b> ${infoFields.creator}</div>
+            <div><b>Publisher:</b> ${infoFields.publisher}</div>
+          </div>
+        `);
+      } else {
+        setInfoModalHtml(`<div style='color:red'>No info found or failed to render info.</div>`);
+      }
+    } catch (e) {
+      setInfoModalHtml(`<div style='color:red'>No info found or failed to render info.</div>`);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6 mb-6">
+      <h2 className="text-lg font-medium text-gray-900 mb-4">Browse Content Source</h2>
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-1">Select Source</label>
+        <select
+          value={selectedSource || ""}
+          onChange={e => {
+            if (e.target.value === '__manual__') {
+              setManualModalOpen(true);
+            } else {
+              setSelectedSource(e.target.value || null);
+            }
+          }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">-- Choose a source --</option>
+          {Object.entries(sources).map(([name]) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+          <option value="__manual__">Manual Entry...</option>
+        </select>
+      </div>
+      {selectedSource && sources[selectedSource] && (
+        <div style={{ margin: '4px 0 12px 0', color: '#555', fontSize: 13 }}>
+          <span>Repository URL: </span>
+          <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{sources[selectedSource][0]}</span>
+        </div>
+      )}
+      {/* Select All Checkbox */}
+      {root.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <TreeCheckbox
+            checked={getAllRootUrls(root).every(url => selected[url])}
+            indeterminate={getAllRootUrls(root).some(url => selected[url]) && !getAllRootUrls(root).every(url => selected[url])}
+            onChange={e => {
+              const allUrls = getAllRootUrls(root);
+              const updates: Record<string, boolean> = {};
+              for (const url of allUrls) {
+                updates[url] = e.target.checked;
+              }
+              setSelected(prev => ({ ...prev, ...updates }));
+            }}
+          />
+          <span style={{ fontWeight: 600, marginLeft: 4 }}>Select All</span>
+          <div style={{ flex: 1 }} />
+          <span style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
+            <input
+              type="text"
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              placeholder="Search files/folders..."
+              style={{ padding: '2px 8px', border: '1px solid #ccc', borderRadius: 4 }}
+            />
+            <button
+              onClick={() => setSearchText(searchInput)}
+              style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}
+              title="Search"
+            >
+              🔍
+            </button>
+          </span>
+        </div>
+      )}
+      {loading && <div>Loading directory...</div>}
+      {!loading && root && selectedSource && (
+        <div style={{ maxHeight: 400, overflowY: "auto", border: "1px solid #eee", borderRadius: 4, padding: 8 }}>
+          {root.map(node => renderNode(node))}
+        </div>
+      )}
+      <button
+        className="mt-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+        onClick={handleDownloadClick}
+        disabled={!root || Object.values(selected).every(v => !v) || !selectedSource}
+      >
+        Download Selected
+      </button>
+      {showModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold mb-2">Download Confirmation</h3>
+            <p className="mb-2">
+              You are about to download <b>{modalFiles.length}</b> file(s) with a total size of <b>{formatFileSize(totalSize)}</b>.
+            </p>
+            <ul className="mb-2 max-h-32 overflow-y-auto text-xs">
+              {modalFiles.slice(0, 10).map(f => (
+                <li key={f.url}>{f.name} ({formatFileSize(f.size)})</li>
+              ))}
+              {modalFiles.length > 10 && <li>...and {modalFiles.length - 10} more</li>}
+            </ul>
+            <div className="flex gap-2 mt-4">
+              <button
+                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                onClick={() => {
+                  setShowModal(false);
+                  onDownload(modalFiles);
+                }}
+              >
+                Confirm Download
+              </button>
+              <button
+                className="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500"
+                onClick={() => setShowModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {infoModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.3)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 8, padding: 24, maxWidth: 600, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 2px 16px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontWeight: 600, fontSize: 18 }}>{infoModalTitle}</span>
+              <button onClick={() => setInfoModalOpen(false)} style={{ fontSize: 20, background: 'none', border: 'none', cursor: 'pointer' }}>✖️</button>
+            </div>
+            {infoModalHtml === '<div>Loading...</div>' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 40 }}>
+                <span style={{ display: 'inline-block', width: 24, height: 24 }}>
+                  <svg style={{ display: 'block' }} width="24" height="24" viewBox="0 0 50 50">
+                    <circle cx="25" cy="25" r="20" fill="none" stroke="#2563eb" strokeWidth="5" strokeDasharray="31.4 31.4" strokeLinecap="round">
+                      <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite" />
+                    </circle>
+                  </svg>
+                </span>
+                <span>Loading...</span>
+              </div>
+            ) : (
+              <div dangerouslySetInnerHTML={{ __html: infoModalHtml || '<div style=\'color:red\'>No info found or failed to render info.</div>' }} />
+            )}
+          </div>
+        </div>
+      )}
+      {manualModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.3)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 8, padding: 24, maxWidth: 400, minWidth: 320, boxShadow: '0 2px 16px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ fontWeight: 600, fontSize: 18, marginBottom: 16 }}>Add Manual Repository</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label>Name:</label>
+              <input type="text" value={manualName} onChange={e => setManualName(e.target.value)} style={{ width: '100%', padding: 6, marginTop: 2, marginBottom: 8 }} />
+              <label>Repository URL:</label>
+              <input type="text" value={manualRepoUrl} onChange={e => setManualRepoUrl(e.target.value)} style={{ width: '100%', padding: 6, marginTop: 2, marginBottom: 8 }} />
+              <label>Info URL:</label>
+              <input type="text" value={manualInfoUrl} onChange={e => setManualInfoUrl(e.target.value)} style={{ width: '100%', padding: 6, marginTop: 2, marginBottom: 8 }} disabled={manualNoInfo} />
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                <input type="checkbox" id="noInfo" checked={manualNoInfo} onChange={e => { setManualNoInfo(e.target.checked); if (e.target.checked) setManualInfoUrl(''); }} />
+                <label htmlFor="noInfo" style={{ marginLeft: 6, color: manualNoInfo ? '#888' : undefined }}>No Info URL</label>
+              </div>
+              {manualError && <div style={{ color: 'red', marginBottom: 8 }}>{manualError}</div>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setManualModalOpen(false)} style={{ padding: '6px 16px' }}>Cancel</button>
+              <button onClick={async () => {
+                if (!manualName || !manualRepoUrl) { setManualError('Name and Repository URL are required.'); return; }
+                setManualError('');
+                // POST to backend
+                const resp = await fetch('http://localhost:8080/api/v1/piles/add-source', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: manualName, repo_url: manualRepoUrl, info_url: manualNoInfo ? null : manualInfoUrl })
+                });
+                if (resp.ok) {
+                  const updated = await resp.json();
+                  setSources(updated);
+                  setSelectedSource(manualName);
+                  setManualModalOpen(false);
+                  setManualName(''); setManualRepoUrl(''); setManualInfoUrl(''); setManualNoInfo(false);
+                } else {
+                  setManualError('Failed to add source.');
+                }
+              }} style={{ padding: '6px 16px', background: '#2563eb', color: '#fff', borderRadius: 4 }}>Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export function Piles() {
   const [piles, setPiles] = useState<Pile[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -144,6 +733,10 @@ export function Piles() {
   const [validationStatus, setValidationStatus] = useState<
     Record<string, { valid: boolean; message: string; checking: boolean }>
   >({});
+  const [showGutenberg, setShowGutenberg] = useState(false);
+  const [gutenbergQuery, setGutenbergQuery] = useState("");
+  const [gutenbergResults, setGutenbergResults] = useState<GutenbergBook[]>([]);
+  const [gutenbergLoading, setGutenbergLoading] = useState(false);
 
   const handleAddPile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -543,6 +1136,58 @@ export function Piles() {
     }
   };
 
+  const searchGutenberg = async () => {
+    setGutenbergLoading(true);
+    setGutenbergResults([]);
+    try {
+      const resp = await fetch(
+        `http://localhost:8080/api/v1/piles/gutenberg-search?query=${encodeURIComponent(
+          gutenbergQuery
+        )}`
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        setGutenbergResults(data.data.results || []);
+      } else {
+        setGutenbergResults([]);
+      }
+    } catch (e) {
+      setGutenbergResults([]);
+    } finally {
+      setGutenbergLoading(false);
+    }
+  };
+
+  const handleAddGutenbergPile = async (book: GutenbergBook) => {
+    const pileData = {
+      name: `gutenberg_${book.id}`,
+      display_name: book.title,
+      description: `Project Gutenberg book${book.authors && book.authors.length ? ` by ${book.authors.map(a => a.name).join(", ")}` : ""}`,
+      category: "books",
+      source_type: "gutenberg",
+      source_url: String(book.id),
+      tags: book.subjects?.slice(0, 5) || [],
+    };
+    try {
+      const response = await fetch("http://localhost:8080/api/v1/piles/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pileData),
+      });
+      if (response.ok) {
+        const result = await response.json();
+        setPiles([...piles, result.data]);
+        loadPiles();
+        alert(`Pile for '${book.title}' added!`);
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to add pile: ${errorData.detail}`);
+      }
+    } catch (e) {
+      alert("Error adding pile");
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -564,112 +1209,28 @@ export function Piles() {
       </div>
 
       {showQuickAdd && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
-            Quick Add - Popular Content Sources
-          </h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Add popular offline content repositories with one click. These are
-            curated sources that work well with BabylonPiles.
-          </p>
-
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {QUICK_ADD_SOURCES.map((source) => (
-              <div
-                key={source.id}
-                className="border rounded-lg p-4 hover:shadow-md transition-shadow"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-medium text-gray-900 text-sm">
-                    {source.display_name}
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2 py-1 text-xs rounded ${getDifficultyColor(
-                        source.difficulty
-                      )}`}
-                    >
-                      {source.difficulty}
-                    </span>
-                    {validationStatus[source.id] && (
-                      <span
-                        className={`px-2 py-1 text-xs rounded ${
-                          validationStatus[source.id].checking
-                            ? "bg-blue-100 text-blue-800"
-                            : validationStatus[source.id].valid
-                            ? "bg-green-100 text-green-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
-                        title={validationStatus[source.id].message}
-                      >
-                        {validationStatus[source.id].checking
-                          ? "Checking..."
-                          : validationStatus[source.id].valid
-                          ? "✓ Valid"
-                          : "✗ Invalid"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <p className="text-xs text-gray-600 mb-3 line-clamp-2">
-                  {source.description}
-                </p>
-
-                <div className="flex items-center space-x-2 mb-3">
-                  <span
-                    className={`px-2 py-1 text-xs rounded ${getCategoryColor(
-                      source.category
-                    )}`}
-                  >
-                    {source.category}
-                  </span>
-                  <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                    {source.source_type.toUpperCase()}
-                  </span>
-                  {source.size && (
-                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                      {source.size}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {source.tags.slice(0, 3).map((tag, index) => (
-                    <span
-                      key={index}
-                      className="px-1 py-0.5 text-xs bg-gray-100 text-gray-600 rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {source.tags.length > 3 && (
-                    <span className="px-1 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
-                      +{source.tags.length - 3}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() =>
-                      validateQuickAddUrl(source.id, source.source_url)
-                    }
-                    className="flex-1 bg-gray-500 text-white px-3 py-2 rounded text-sm hover:bg-gray-600 transition-colors"
-                  >
-                    Check URL
-                  </button>
-                  <button
-                    onClick={() => handleQuickAdd(source)}
-                    className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 transition-colors"
-                  >
-                    Add to Piles
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <KiwixTreeBrowser
+          onDownload={async (files) => {
+            // For each file, create a pile
+            for (const file of files) {
+              const pileData = {
+                name: file.name.replace(/\W+/g, "_").toLowerCase(),
+                display_name: file.name,
+                description: `Kiwix ZIM file: ${file.name}`,
+                category: "education",
+                source_type: "kiwix",
+                source_url: file.url,
+                tags: ["kiwix", "zim"],
+              };
+              await fetch("http://localhost:8080/api/v1/piles/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(pileData),
+              });
+            }
+            alert(`Added ${files.length} pile(s) to your library!`);
+          }}
+        />
       )}
 
       {showAddForm && (
