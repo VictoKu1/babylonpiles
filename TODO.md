@@ -347,3 +347,10 @@
 - [ ] Documentation is comprehensive and up-to-date
 - [ ] Community is active and engaged
 - [ ] Installation and deployment is automated and reliable
+
+## Completed
+- Allow manual repository entry from frontend (with backend sources.json update and Info URL support)
+
+## TODO
+- Review Info URL handling for edge cases (malformed URLs, None values)
+- Consider future enhancements for custom metadata schemas for repositories

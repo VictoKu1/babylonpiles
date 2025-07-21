@@ -388,3 +388,12 @@ A: Pull the latest code and re-run `docker-compose up --build -d`.
 ---
 
 For more details, see the [README.md](../README.md), [Storage Guide](STORAGE.md), or [API documentation](API.md). 
+
+## Manual Repository Entry
+
+You can now add custom content repositories directly from the frontend interface. When using the 'Manual Entry...' option in the repository dropdown, you will be prompted for:
+- Repository Name
+- Repository URL (required)
+- Info URL (optional; for file metadata)
+
+If you do not provide an Info URL, file info (the 'i' button) will not be available for files from that source. The backend will store your custom source in `sources.json` automatically. 

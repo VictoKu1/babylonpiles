@@ -195,3 +195,44 @@ Some endpoints support WebSocket connections for real-time updates:
 - **Caching**: Response caching for frequently accessed data
 - **Compression**: Gzip compression for large responses
 - **Streaming**: File streaming for large uploads/downloads 
+
+## Add or Update Source
+
+**POST** `/api/v1/piles/add-source`
+
+Add or update a content source in the backend's `sources.json` file. This endpoint is used by the frontend when a user manually enters a repository.
+
+### Request Body (JSON)
+```
+{
+  "name": "MyRepo",
+  "repo_url": "https://example.com/zim/",
+  "info_url": "https://example.com/info.xml" // or null
+}
+```
+- `name` (string, required): Name of the repository (used as the key in sources.json)
+- `repo_url` (string, required): URL to the repository root
+- `info_url` (string or null, optional): URL to a file info XML/HTML, or null if not available
+
+If `info_url` is null, the backend stores it as the string 'None' for compatibility with the frontend.
+
+### Response
+Returns the updated sources list as JSON:
+```
+{
+  "Kiwix": ["https://download.kiwix.org/zim/", "https://mirrors.dotsrc.org/kiwix/library/library_zim.xml"],
+  "MyRepo": ["https://example.com/zim/", "https://example.com/info.xml"]
+}
+```
+
+If `info_url` was null, the value will be 'None':
+```
+{
+  "NoInfoRepo": ["https://example.com/zim/", "None"]
+}
+```
+
+### Errors
+- 400: Name and repo_url are required.
+
+--- 

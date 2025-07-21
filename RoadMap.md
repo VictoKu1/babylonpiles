@@ -64,6 +64,10 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Installation and setup instructions
 - Troubleshooting guides
 
+## Recent Features
+
+- Manual repository entry from the frontend (Quick Add): Users can now add custom repositories, which are stored in sources.json via the backend. If no Info URL is provided, the system adapts and hides the info button for those sources.
+
 ---
 
 ## 🛠️ In Progress / Planned

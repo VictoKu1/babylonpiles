@@ -39,44 +39,18 @@ git clone https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 ```
 
-### 2. Place your ZIM files (and other pile files) in the `./storage/piles` directory
-- This directory is shared between the backend, kiwix-serve, and the UI.
-- Any `.zim` file you want to serve or view must be placed here.
-
-### 3. Start everything with the unified script
-**Linux/macOS:**
-```bash
-./babylonpiles.sh
-```
-
-**Windows:**
-```cmd
-babylonpiles.bat
-```
-
-```powershell
-.\babylonpiles.bat
-```
-
-The script provides an interactive menu for:
-- Starting/stopping services
-- **Multi-location storage allocation** during startup
-- Managing storage drives
-- Viewing logs
-- System status
-
-### 4. Access the app
-- Backend API: http://localhost:8080
-- API Documentation: http://localhost:8080/docs
-- Frontend: http://localhost:3000
-
-### 5. Alternative: Manual Docker commands
+### 2. Manual Docker commands
 ```bash
 docker-compose up --build -d  # Start everything
 docker-compose down           # Stop everything
 docker-compose restart        # Restart services
 docker-compose logs -f        # View logs
 ```
+
+### 3. Access the app
+- Backend API: http://localhost:8080
+- API Documentation: http://localhost:8080/docs
+- Frontend: http://localhost:3000
 
 ---
 
@@ -214,12 +188,21 @@ Please check our [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development
 
 1. **Install Docker and Docker Compose**
 2. **Clone this repository**
-3. **Place your ZIM files (and other pile files) in the `./storage/piles` directory**
-   - This directory is shared between the backend, kiwix-serve, and the UI.
-   - Any `.zim` file you want to serve or view must be placed here.
+3. **Enter repository**
 4. **Start the services:**
    ```sh
    docker-compose up -d
    ```
 5. **Access the UI:**
    - Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Quick Add & Custom Content Sources
+
+You can now add custom content repositories directly from the frontend interface using the 'Manual Entry...' option in the repository dropdown. This allows you to:
+- Enter a repository name
+- Enter a repository URL (required)
+- Optionally provide an Info URL for file metadata
+
+If you do not provide an Info URL, file info (the 'i' button) will not be available for files from that source. The backend will store your custom source in `sources.json` automatically.
+
+For API users, you can add or update sources using the `/api/v1/piles/add-source` endpoint. See [API.md](docs/API.md) for details.
