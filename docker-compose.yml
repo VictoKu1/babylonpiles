@@ -6,6 +6,7 @@ services:
     volumes:
       - babylonpiles_data:/mnt/babylonpiles/data
       - ./storage/piles:/mnt/babylonpiles/piles
+      - ./.git:/app/.git:ro
     environment:
       - DATA_DIR=/mnt/babylonpiles/data
       - PILES_DIR=/mnt/babylonpiles/piles

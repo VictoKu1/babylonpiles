@@ -18,6 +18,8 @@ from datetime import datetime
 import time
 import subprocess
 import platform
+from fastapi.responses import JSONResponse
+import logging
 
 router = APIRouter()
 
@@ -1093,6 +1095,47 @@ async def update_user_config(request: dict = Body(...)) -> Dict[str, Any]:
             status_code=500,
             detail=f"Error updating user config: {str(e)}"
         )
+
+@router.get("/gitinfo")
+def get_git_info():
+    import os
+    import datetime
+    import logging
+    version = "1.0.0"
+    build = "2024.01.15"
+    try:
+        root = os.getcwd()
+        git_dir = os.path.join(root, '.git')
+        head_path = os.path.join(git_dir, 'HEAD')
+        print(f"[GITINFO] head_path: {head_path}")
+        if os.path.exists(head_path):
+            with open(head_path, 'r') as f:
+                ref = f.read().strip()
+            print(f"[GITINFO] ref: {ref}")
+            if ref.startswith('ref:'):
+                ref_rel = ref.split(':', 1)[1].strip()
+                ref_path = os.path.join(git_dir, *ref_rel.split('/'))
+                print(f"[GITINFO] ref_path: {ref_path}")
+                if os.path.exists(ref_path):
+                    with open(ref_path, 'r') as rf:
+                        version = rf.read().strip()[:7]
+                    log_path = os.path.join(git_dir, 'logs', *ref_rel.split('/'))
+                    print(f"[GITINFO] log_path: {log_path}")
+                    if os.path.exists(log_path):
+                        with open(log_path, 'r') as lf:
+                            lines = lf.readlines()
+                        print(f"[GITINFO] log lines: {lines[-2:]}")
+                        if lines:
+                            last = lines[-1]
+                            parts = last.split()
+                            print(f"[GITINFO] last log line: {last}")
+                            print(f"[GITINFO] parts: {parts}")
+                            if len(parts) > 4:
+                                timestamp = int(parts[4])
+                                build = datetime.datetime.utcfromtimestamp(timestamp).strftime('%Y.%m.%d')
+    except Exception as e:
+        print(f"[GITINFO] Exception: {e}")
+    return JSONResponse({"version": version, "build": build})
 
 def _calculate_directory_size(path: str) -> tuple[int, int]:
     """Calculate total size and file count of a directory"""

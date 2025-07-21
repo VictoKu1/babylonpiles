@@ -236,3 +236,22 @@ If `info_url` was null, the value will be 'None':
 - 400: Name and repo_url are required.
 
 --- 
+
+## GET /api/v1/system/gitinfo
+
+Returns the current git commit hash (short) and build date (YYYY.MM.DD) for the backend code, as read from the .git directory. This is used by the frontend to display software version/build information.
+
+**Method:** GET
+
+**Response:**
+```json
+{
+  "version": "<commit_hash>",
+  "build": "<YYYY.MM.DD>"
+}
+```
+
+- `version`: The short (7-character) commit hash of the latest commit on the current branch.
+- `build`: The date of the latest commit in the format YYYY.MM.DD.
+
+If the .git directory is not available, default values are returned. 
