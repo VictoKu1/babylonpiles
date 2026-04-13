@@ -10,7 +10,7 @@
 - [x] Authentication endpoints (basic)
 - [x] Update management endpoints
 - [x] Comprehensive error handling
-- [x] Rate limiting implementation
+- [ ] Rate limiting implementation
 - [x] OpenAPI documentation
 
 ### Content Management

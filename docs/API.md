@@ -1,257 +1,145 @@
-# API Documentation
+# API Reference
 
-## Access
+## Base URLs
+- Local backend: `http://localhost:8080`
+- OpenAPI UI: `http://localhost:8080/docs`
+- Versioned API root: `http://localhost:8080/api/v1`
 
-The API is available at http://localhost:8080 when running with Docker Compose.
-
-## Interactive Documentation
-
-Visit http://localhost:8080/docs for interactive API documentation with:
-- All available endpoints
-- Request/response examples
-- Try-it-out functionality
-
-## Key Endpoints
-
-### File Management
-- **List Files**: `GET /api/v1/files?path={path}`
-- **Upload File**: `POST /api/v1/files/upload`
-- **Download File**: `GET /api/v1/files/download?path={path}`
-- **Delete File**: `DELETE /api/v1/files/delete?path={path}`
-- **Move File**: `POST /api/v1/files/move`
-- **Set Permission**: `POST /api/v1/files/permission/{file_path:path}`
-- **Toggle Permission**: `POST /api/v1/files/permission/{file_path:path}/toggle`
-
-### Storage Management
-- **Storage Status**: `GET /api/v1/storage/status`
-- **Storage Drives**: `GET /api/v1/storage/drives`
-- **Scan Drives**: `POST /api/v1/storage/drives/scan`
-
-### System Management
-- **System Metrics**: `GET /api/v1/system/metrics`
-- **System Status**: `GET /api/v1/system/status`
-- **System Mode**: `GET /api/v1/system/mode`
-
-### Pile Management
-- **List Piles**: `GET /api/v1/piles/`
-- **Create Pile**: `POST /api/v1/piles/`
-- **Update Pile**: `PUT /api/v1/piles/{pile_id}`
-- **Delete Pile**: `DELETE /api/v1/piles/{pile_id}`
-
-### User Management
-- **User Config**: `GET /api/v1/system/user/config`
-- **Update User Config**: `POST /api/v1/system/user/config`
-
-### Hotspot Management
-- **Hotspot Status**: `GET /api/v1/system/hotspot/status`
-- **Start Hotspot**: `POST /api/v1/system/hotspot/start`
-- **Stop Hotspot**: `POST /api/v1/system/hotspot/stop`
-- **Hotspot Requirements**: `GET /api/v1/system/hotspot/requirements`
-
-## Recent Improvements
-
-### File Upload Enhancements
-- **Drag and Drop Support**: Files can be uploaded via drag and drop from desktop to browser
-- **Progress Tracking**: Upload progress is tracked and displayed to users
-- **Error Handling**: Improved error messages and user feedback
-- **Visual Feedback**: Upload overlays and progress indicators
-
-### Permission Management
-- **Toggle Permissions**: Easy toggle between public and private file permissions
-- **Enhanced Error Handling**: Better error parsing and user-friendly notifications
-- **Fixed Routing**: Resolved endpoint conflicts for permission operations
-- **User-Friendly Messages**: Clear success and error notifications
-
-### Dashboard Storage Accuracy
-- **Content Storage Metrics**: Dashboard now shows actual content storage instead of system disk usage
-- **Real-time Updates**: Storage metrics update automatically after file operations
-- **Accurate Calculations**: File sizes are calculated correctly for dashboard display
-- **Content vs System Storage**: Clear distinction between user content and system storage
-
-### System Monitoring
-- **Real-time Metrics**: CPU, memory, and disk usage monitoring
-- **Storage Analytics**: Detailed storage reporting and analysis
-- **Health Monitoring**: System status and performance tracking
-- **Visual Indicators**: Progress bars and status indicators
+## Request Shapes
+- `POST /api/v1/auth/login` and `POST /api/v1/auth/register` read parameters from the query string, not a JSON body.
+- `GET /api/v1/auth/me` is the only route in this surface that depends on bearer authentication in code.
+- `POST /api/v1/files/upload`, `POST /api/v1/files/mkdir`, `POST /api/v1/files/move`, and `POST /api/v1/files/permission/{file_path:path}` use multipart form fields.
+- `POST /api/v1/piles/add-source` expects JSON.
+- `POST /api/v1/piles/validate-url` uses a form field.
+- `POST /api/v1/system/user/config` expects JSON.
+- `POST /api/v1/system/mode`, `POST /api/v1/system/restart`, `POST /api/v1/system/shutdown`, and the hotspot approval/request routes use query/path parameters as defined below.
 
 ## Authentication
+- `POST /api/v1/auth/login?username=...&password=...`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/register?username=...&password=...&email=...&full_name=...`
 
-Most endpoints require authentication. Use the login endpoint to get a token:
+`/auth/login` returns `access_token`, `token_type`, and `user`. `logout` is client-side token removal only.
 
-```bash
-curl -X POST "http://localhost:8080/api/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "password"}'
-```
+## Piles
+- `GET /api/v1/piles/` lists piles. Optional query params: `category`, `status` (`active`, `downloading`, `ready`).
+- `GET /api/v1/piles/categories`
+- `GET /api/v1/piles/sources-list`
+- `POST /api/v1/piles/add-source`
+- `GET /api/v1/piles/browse-source?url=...&description_url=...`
+- `GET /api/v1/piles/file-info?filename=...&description_url=...`
+- `GET /api/v1/piles/{pile_id}`
+- `POST /api/v1/piles/`
+- `PUT /api/v1/piles/{pile_id}`
+- `DELETE /api/v1/piles/{pile_id}`
+- `POST /api/v1/piles/{pile_id}/upload`
+- `GET /api/v1/piles/{pile_id}/download`
+- `POST /api/v1/piles/{pile_id}/toggle`
+- `GET /api/v1/piles/{pile_id}/logs?limit=...`
+- `POST /api/v1/piles/{pile_id}/download-source`
+- `POST /api/v1/piles/validate-url`
+- `GET /api/v1/piles/gutenberg-search?query=...`
 
-## Error Handling
+`POST /api/v1/piles/add-source` stores `info_url` as the string `"None"` when it is omitted or null, matching the frontend compatibility path.
 
-The API returns standardized error responses:
+## Files
+- `GET /api/v1/files?path=...`
+- `GET /api/v1/files/download?path=...`
+- `POST /api/v1/files/upload`
+- `POST /api/v1/files/mkdir`
+- `DELETE /api/v1/files/delete?path=...`
+- `GET /api/v1/files/view/{file_path:path}`
+- `GET /api/v1/files/preview/{file_path:path}`
+- `GET /api/v1/files/zim-viewer/{file_path:path}`
+- `GET /api/v1/files/download-status`
+- `GET /api/v1/files/permission/{file_path:path}`
+- `POST /api/v1/files/permission/{file_path:path}/toggle`
+- `POST /api/v1/files/permission/{file_path:path}`
+- `GET /api/v1/files/metadata/{file_path:path}`
+- `POST /api/v1/files/move`
 
-```json
-{
-  "detail": "Error message",
-  "status_code": 400
-}
-```
+`POST /api/v1/files/move` uses `src_path` and `dest_path` form fields, not JSON.
 
-### Common Error Codes
-- `400 Bad Request`: Invalid request data
-- `401 Unauthorized`: Authentication required
-- `403 Forbidden`: Insufficient permissions
-- `404 Not Found`: Resource not found
-- `422 Unprocessable Entity`: Validation error
-- `500 Internal Server Error`: Server error
+## System
+- `GET /api/v1/system/status`
+- `GET /api/v1/system/mode`
+- `POST /api/v1/system/mode?mode=learn|store`
+- `GET /api/v1/system/storage`
+- `GET /api/v1/system/network`
+- `GET /api/v1/system/metrics`
+- `POST /api/v1/system/restart`
+- `POST /api/v1/system/shutdown`
+- `GET /api/v1/system/drives`
+- `POST /api/v1/system/hotspot/start`
+- `POST /api/v1/system/hotspot/stop`
+- `GET /api/v1/system/hotspot/status`
+- `GET /api/v1/system/hotspot/public-content`
+- `GET /api/v1/system/hotspot/download/{file_path:path}`
+- `POST /api/v1/system/hotspot/request-upload`
+- `POST /api/v1/system/hotspot/approve-request/{request_id}`
+- `POST /api/v1/system/hotspot/reject-request/{request_id}`
+- `GET /api/v1/system/hotspot/requirements`
+- `GET /api/v1/system/user/config`
+- `POST /api/v1/system/user/config`
+- `GET /api/v1/system/gitinfo`
 
-## Response Formats
+`POST /api/v1/system/user/config` accepts JSON like `{"user_name": "Alice"}` and stores a cleaned version. `GET /api/v1/system/gitinfo` returns a version string and build date.
 
-### Success Response
-```json
-{
-  "success": true,
-  "data": {
-    // Response data
-  }
-}
-```
+## Storage
+- `GET /api/v1/storage/drives`
+- `GET /api/v1/storage/drives/{drive_id}`
+- `POST /api/v1/storage/drives/scan`
+- `POST /api/v1/storage/allocate?file_size=...&file_id=...`
+- `GET /api/v1/storage/chunks?file_id=...`
+- `GET /api/v1/storage/chunks/{chunk_id}`
+- `POST /api/v1/storage/migrate?chunk_id=...&target_drive=...`
+- `GET /api/v1/storage/migrations`
+- `GET /api/v1/storage/migrations/{migration_id}`
+- `GET /api/v1/storage/status`
+- `GET /api/v1/storage/files/{file_id}`
+- `DELETE /api/v1/storage/files/{file_id}`
+- `GET /api/v1/storage/health`
 
-### Error Response
-```json
-{
-  "success": false,
-  "detail": "Error message"
-}
-```
+These routes are thin proxies to the storage client/service and return service-shaped payloads rather than a uniform local schema.
 
-## Rate Limiting
+## Updates
+- `GET /api/v1/updates/`
+- `GET /api/v1/updates/{log_id}`
+- `POST /api/v1/updates/pile/{pile_id}`
+- `POST /api/v1/updates/pile/{pile_id}/rollback`
+- `POST /api/v1/updates/bulk?category=...`
+- `GET /api/v1/updates/status`
 
-API requests are rate-limited to prevent abuse:
-- **Default**: 100 requests per minute per IP
-- **File Uploads**: 10 uploads per minute per user
-- **System Operations**: 5 operations per minute per user
+## Pile Schemas
+`PileCreate` requires:
+- `name`
+- `display_name`
+- `category`
+- `source_type`
 
-## Testing
+`PileCreate` also accepts:
+- `description`
+- `source_url`
+- `source_config`
+- `tags`
 
-Test the API using the provided test suite:
+`PileUpdate` accepts optional updates for:
+- `display_name`
+- `description`
+- `category`
+- `source_type`
+- `source_url`
+- `source_config`
+- `tags`
+- `is_active`
 
-```bash
-# Run all API tests
-python tests/run_all_tests.py
+## Other Backend Routes
+- `GET /health`
+- `GET /`
 
-# Run specific API tests
-python tests/test_storage_api.py
-python tests/test_permissions.py
-```
+`/health` returns the backend health status and current mode. `/` serves the frontend build when present, otherwise it returns a simple status message.
 
-## Examples
-
-### Upload a File
-```bash
-curl -X POST "http://localhost:8080/api/v1/files/upload" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -F "file=@/path/to/file.txt" \
-  -F "path="
-```
-
-### Toggle File Permission
-```bash
-curl -X POST "http://localhost:8080/api/v1/files/permission/test.txt/toggle" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-### Get System Metrics
-```bash
-curl -X GET "http://localhost:8080/api/v1/system/metrics" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-### Move a File
-```bash
-curl -X POST "http://localhost:8080/api/v1/files/move" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"source": "old/path.txt", "destination": "new/path.txt"}'
-```
-
-## WebSocket Support
-
-Some endpoints support WebSocket connections for real-time updates:
-- **File Upload Progress**: Real-time upload progress
-- **System Metrics**: Live system monitoring
-- **Storage Updates**: Real-time storage changes
-
-## Security
-
-- **JWT Authentication**: Secure token-based authentication
-- **CORS Support**: Cross-origin resource sharing
-- **Input Validation**: Comprehensive request validation
-- **Error Sanitization**: Safe error message handling
-- **Rate Limiting**: Protection against abuse
-
-## Performance
-
-- **Async Operations**: Non-blocking request handling
-- **Connection Pooling**: Efficient database connections
-- **Caching**: Response caching for frequently accessed data
-- **Compression**: Gzip compression for large responses
-- **Streaming**: File streaming for large uploads/downloads 
-
-## Add or Update Source
-
-**POST** `/api/v1/piles/add-source`
-
-Add or update a content source in the backend's `sources.json` file. This endpoint is used by the frontend when a user manually enters a repository.
-
-### Request Body (JSON)
-```
-{
-  "name": "MyRepo",
-  "repo_url": "https://example.com/zim/",
-  "info_url": "https://example.com/info.xml" // or null
-}
-```
-- `name` (string, required): Name of the repository (used as the key in sources.json)
-- `repo_url` (string, required): URL to the repository root
-- `info_url` (string or null, optional): URL to a file info XML/HTML, or null if not available
-
-If `info_url` is null, the backend stores it as the string 'None' for compatibility with the frontend.
-
-### Response
-Returns the updated sources list as JSON:
-```
-{
-  "Kiwix": ["https://download.kiwix.org/zim/", "https://mirrors.dotsrc.org/kiwix/library/library_zim.xml"],
-  "MyRepo": ["https://example.com/zim/", "https://example.com/info.xml"]
-}
-```
-
-If `info_url` was null, the value will be 'None':
-```
-{
-  "NoInfoRepo": ["https://example.com/zim/", "None"]
-}
-```
-
-### Errors
-- 400: Name and repo_url are required.
-
---- 
-
-## GET /api/v1/system/gitinfo
-
-Returns the current git commit hash (short) and build date (YYYY.MM.DD) for the backend code, as read from the .git directory. This is used by the frontend to display software version/build information.
-
-**Method:** GET
-
-**Response:**
-```json
-{
-  "version": "<commit_hash>",
-  "build": "<YYYY.MM.DD>"
-}
-```
-
-- `version`: The short (7-character) commit hash of the latest commit on the current branch.
-- `build`: The date of the latest commit in the format YYYY.MM.DD.
-
-If the .git directory is not available, default values are returned. 
+## Notes
+- The old claims about rate limiting, WebSocket support, and standardized success/error envelopes were removed because they are not implemented in the current backend routes.
+- Some system endpoints are described as admin-only in code comments, but the routes themselves do not currently enforce an auth dependency.

@@ -24,7 +24,7 @@ docker-compose up --build -d
 
 > Or, if you prefer, you can use the provided helper script for your OS:
 > - On Linux/Mac/WSL: `./babylonpiles.sh`
-> - On Windows: `babylonpiles.bat`
+> - On Windows: run the Docker Compose command directly
 
 ### 3. Access the app
 - Backend API: http://localhost:8080
@@ -37,7 +37,7 @@ docker-compose up --build -d
 
 - **Offline-first**: No internet required for access
 - **Modular**: Download and update data in categories (encyclopedias, health, tech, books, videos, and more)
-- **Multi-access**: Serve data via Wi-Fi, Ethernet, USB gadget, or direct web browser
+- **Multi-access**: Serve data via Wi-Fi, Ethernet, or direct web browser
 - **Admin control**: Add, update, or remove information through a web UI or CLI
 - **Auto-updates**: Sync content from trusted sources or repositories
 - **Multi-user**: Share your knowledge base with family, teams, classrooms, or communities
@@ -73,7 +73,7 @@ babylonpiles/
 │   ├── src/                  # React components
 │   ├── package.json          # Node.js dependencies
 │   └── index.html           # Main HTML file
-├── scripts/                   # Utility scripts (Docker only)
+├── babylonpiles.sh            # Unified Docker helper script
 ├── docs/                      # Documentation
 │   └── INSTALL.md           # Installation guide
 ├── TODO.md                   # Development roadmap
@@ -97,7 +97,7 @@ babylonpiles/
 ## System Integration
 
 - **Auto-mount**: External HDD/SSD detection and mounting (handled by Docker volume configuration)
-- **Network Configuration**: WiFi hotspot and DHCP server setup (if supported by host, not managed by BabylonPiles)
+- **Network Configuration**: WiFi hotspot and DHCP server setup managed via BabylonPiles hotspot endpoints
 
 ---
 
@@ -172,8 +172,7 @@ babylonpiles/
 │   ├── src/                  # React components
 │   ├── package.json          # Node.js dependencies
 │   └── index.html           # Main HTML file
-├── scripts/                   # Utility scripts
-│   ├── mode-switch.sh       # Mode switching script
+├── babylonpiles.sh            # Unified Docker helper script
 ├── docs/                      # Documentation
 │   └── INSTALL.md           # Installation guide
 ├── TODO.md                   # Development roadmap
@@ -216,7 +215,7 @@ babylonpiles/
 - WiFi hotspot for local network access
 - Offline content serving
 - Local network file sharing
-- USB gadget mode support
+- Direct web browser access
 
 ### Content Management
 - Modular "piles" system for organizing content
@@ -247,9 +246,9 @@ babylonpiles/
 
 ### Infrastructure
 - **Platform**: Raspberry Pi (primary), Linux, Windows, macOS
-- **Network**: WiFi hotspot, Ethernet, USB gadget
+- **Network**: WiFi hotspot, Ethernet, direct browser access
 - **Storage**: External HDD/SSD with auto-mount
-- **Service**: Systemd for process management
+- **Service**: Docker Compose for container orchestration
 
 ## 📊 Supported Content Sources
 
@@ -285,8 +284,8 @@ babylonpiles/
 ```bash
 git clone https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
-sudo chmod +x scripts/setup.sh
-sudo ./scripts/setup.sh
+chmod +x babylonpiles.sh
+./babylonpiles.sh
 ```
 
 ### Development Setup
