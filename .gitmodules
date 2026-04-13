@@ -1,0 +1,3 @@
+[submodule "vendor/EmergencyStorage"]
+	path = vendor/EmergencyStorage
+	url = https://github.com/VictoKu1/EmergencyStorage.git

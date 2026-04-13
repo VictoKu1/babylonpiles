@@ -42,7 +42,7 @@ async def init_db():
     try:
         async with engine.begin() as conn:
             # Import models to register them
-            from app.models import pile, user, update_log, system_status
+            from app.models import pile, user, update_log, system_status, mirror_job, mirror_run
             
             # Create all tables
             await conn.run_sync(Base.metadata.create_all)

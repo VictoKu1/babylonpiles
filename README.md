@@ -14,6 +14,7 @@ BabylonPiles is an open-source, modular, offline-first knowledge server. It lets
 - 🌐 **Multiple interfaces**: Access via web browser, local network, or Wi-Fi hotspot (if supported by host)
 - 🛠️ **Admin control**: Easily add, update, or remove information through a web UI or API
 - 🔄 **Auto-updates**: Sync content from trusted sources or repositories
+- 🪞 **Mirrored sources**: Schedule OpenStreetMap and Internet Archive sync jobs through a vendored EmergencyStorage adapter
 - 👥 **Multi-user**: Share your knowledge base with family, teams, classrooms, or communities
 - 🕹️ **Open & extensible**: Build plugins for new content categories or automate your own data fetchers
 - 🖱️ **Drag-and-drop file management**: Move files and folders in the web UI with native drag-and-drop
@@ -35,7 +36,7 @@ BabylonPiles is an open-source, modular, offline-first knowledge server. It lets
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/VictoKu1/babylonpiles.git
+git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 ```
 
@@ -95,6 +96,13 @@ docker-compose logs -f        # View logs
 - Validate URLs before adding
 - Download and delete piles with progress tracking
 
+### Mirrored Sources
+- Configure EmergencyStorage-backed mirror jobs from the `Updates` page
+- Supported mirrored datasets: OpenStreetMap planet and Internet Archive `software`, `music`, `movies`, and `texts`
+- Schedule mirrored syncs in UTC with daily, weekly, or monthly presets
+- Browse mirrored files in the normal file browser under `mirrors/<provider>/<variant>/`
+- View recent run status, bytes written, and log excerpts from the UI
+
 ### ZIM File Viewing & Kiwix-Serve
 - View .ZIM files (offline Wikipedia, etc.) in-browser or via Kiwix-Serve
 - Kiwix-Serve runs in Docker and is accessible at http://localhost:8081/
@@ -121,7 +129,8 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - FastAPI backend with async SQLAlchemy
 - React frontend
 - JWT authentication
-- Modular content sources (Kiwix, HTTP, Torrent)
+- Modular content sources (Kiwix, HTTP, Torrent, Gutenberg)
+- EmergencyStorage-backed mirrored sources for OpenStreetMap and Internet Archive
 - System monitoring and metrics
 - Mode switching (Learn/Store)
 - Pile management (CRUD)
@@ -137,6 +146,7 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - **Enhanced file permission management with improved error handling**
 - **Real-time storage updates and visual feedback**
 - **Comprehensive test suite organization and documentation**
+- **EmergencyStorage-backed mirroring subsystem with scheduled sync and run history**
 
 ### In Progress / Planned
 - Streamline Docker images for size and performance
@@ -146,7 +156,7 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Admin portal for uploading, updating, deleting modules
 - Responsive web interface
 - Comprehensive API documentation
-- More content sources (Project Gutenberg, OpenStreetMap, Internet Archive)
+- More content sources (CD3WD, RSS, and custom source plugins)
 - Content versioning and rollback
 - Content discovery and recommendations
 - Automated tests (unit, integration)
@@ -161,6 +171,7 @@ See [RoadMap.md](RoadMap.md) and [TODO.md](TODO.md) for details.
 ## Documentation
 
 - [Installation Guide](docs/INSTALL.md) - Complete Docker setup instructions
+- [Mirrored Sources Guide](docs/MIRRORING.md) - EmergencyStorage-backed mirroring, schedules, and storage layout
 - [Storage Guide](docs/STORAGE.md) - Comprehensive storage management guide including multi-location allocation
 - [Project Summary](PROJECT_SUMMARY.md) - Detailed project overview
 - [TODO List](TODO.md) - Development roadmap and priorities
@@ -187,11 +198,11 @@ Please check our [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development
 ## Quick Start
 
 1. **Install Docker and Docker Compose**
-2. **Clone this repository**
+2. **Clone this repository with submodules**
 3. **Enter repository**
 4. **Start the services:**
    ```sh
-   docker-compose up -d
+   docker-compose up --build -d
    ```
 5. **Access the UI:**
    - Open [http://localhost:3000](http://localhost:3000) in your browser.

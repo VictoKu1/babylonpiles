@@ -17,8 +17,19 @@
 - [x] Kiwix source handler for ZIM files
 - [x] HTTP source handler for direct downloads
 - [x] Torrent source handler (basic)
+- [x] Project Gutenberg source handler and search flow
 - [x] Content metadata extraction
 - [x] Kiwix-Serve integration for .ZIM files
+
+### Mirroring & Scheduled Sync
+- [x] Vendor EmergencyStorage as a pinned Git submodule
+- [x] Add internal mirrorer adapter service and Compose wiring
+- [x] Add mirror job and run persistence models
+- [x] Add mirror provider catalog and validation for supported variants
+- [x] Add scheduled mirror execution, stale-run recovery, and log retrieval
+- [x] Add OpenStreetMap mirrored source support
+- [x] Add Internet Archive mirrored source support (`software`, `music`, `movies`, `texts`)
+- [x] Add mirrored sources management UI in Updates
 
 ### File Management
 - [x] Drag-and-drop file move and parent folder navigation
@@ -129,7 +140,8 @@
 - [ ] Implement search result highlighting
 
 ### Content Management
-- [ ] Add content scheduling and automation
+- [x] Add mirrored source scheduling and automation
+- [ ] Extend scheduling and automation to standard pile update flows
 - [ ] Implement bandwidth-aware downloads
 - [ ] Add content prioritization system
 - [ ] Create content sharing between instances
@@ -137,9 +149,9 @@
 - [ ] Implement content versioning and rollback
 
 ### Additional Content Sources
-- [ ] Implement Project Gutenberg integration
-- [ ] Add OpenStreetMap data support
-- [ ] Create Internet Archive integration
+- [x] Implement Project Gutenberg integration
+- [x] Add OpenStreetMap data support
+- [x] Create Internet Archive integration
 - [ ] Add CD3WD support
 - [ ] Implement custom source plugins
 - [ ] Add RSS feed support for dynamic content
@@ -350,7 +362,9 @@
 
 ## Completed
 - Allow manual repository entry from frontend (with backend sources.json update and Info URL support)
+- Add EmergencyStorage-backed mirrored sources with scheduling, run history, and Updates UI controls
 
 ## TODO
 - Review Info URL handling for edge cases (malformed URLs, None values)
 - Consider future enhancements for custom metadata schemas for repositories
+- Add end-to-end Docker/integration tests for mirrorer execution and scheduled jobs

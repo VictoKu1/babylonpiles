@@ -9,6 +9,7 @@
 - `POST /api/v1/auth/login` and `POST /api/v1/auth/register` read parameters from the query string, not a JSON body.
 - `GET /api/v1/auth/me` is the only route in this surface that depends on bearer authentication in code.
 - `POST /api/v1/files/upload`, `POST /api/v1/files/mkdir`, `POST /api/v1/files/move`, and `POST /api/v1/files/permission/{file_path:path}` use multipart form fields.
+- `POST /api/v1/mirrors/jobs` and `PUT /api/v1/mirrors/jobs/{job_id}` expect JSON.
 - `POST /api/v1/piles/add-source` expects JSON.
 - `POST /api/v1/piles/validate-url` uses a form field.
 - `POST /api/v1/system/user/config` expects JSON.
@@ -103,6 +104,29 @@
 
 These routes are thin proxies to the storage client/service and return service-shaped payloads rather than a uniform local schema.
 
+## Mirrors
+- `GET /api/v1/mirrors/providers`
+- `GET /api/v1/mirrors/jobs`
+- `POST /api/v1/mirrors/jobs`
+- `PUT /api/v1/mirrors/jobs/{job_id}`
+- `POST /api/v1/mirrors/jobs/{job_id}/run`
+- `GET /api/v1/mirrors/jobs/{job_id}/runs?limit=...`
+- `GET /api/v1/mirrors/runs/{run_id}/logs?tail=...`
+
+Mirror job payloads use fixed enums rather than arbitrary source strings:
+- `provider`: `openstreetmap` or `internet_archive`
+- `variant`: `planet`, `software`, `music`, `movies`, or `texts`
+- `schedule_frequency`: `disabled`, `daily`, `weekly`, or `monthly`
+
+`schedule_time_utc` must use `HH:MM` 24-hour UTC format.
+
+`schedule_day` rules:
+- omit for `disabled` and `daily`
+- `0-6` for `weekly` where Sunday is `0`
+- `1-31` for `monthly`
+
+Mirror jobs write content into the shared piles volume under `mirrors/<provider>/<variant>/` and expose run logs through the backend even though execution happens in the internal `mirrorer` service.
+
 ## Updates
 - `GET /api/v1/updates/`
 - `GET /api/v1/updates/{log_id}`
@@ -143,3 +167,4 @@ These routes are thin proxies to the storage client/service and return service-s
 ## Notes
 - The old claims about rate limiting, WebSocket support, and standardized success/error envelopes were removed because they are not implemented in the current backend routes.
 - Some system endpoints are described as admin-only in code comments, but the routes themselves do not currently enforce an auth dependency.
+- The mirrored-source scheduler is separate from the older pile update routes under `/api/v1/updates`.

@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     update_schedule: str = Field(
         default="0 2 * * *", env="UPDATE_SCHEDULE"
     )  # Daily at 2 AM
+    mirrorer_url: str = Field(default="http://mirrorer:8002", env="MIRRORER_URL")
+    mirror_scheduler_poll_seconds: int = Field(default=60, env="MIRROR_SCHEDULER_POLL_SECONDS")
 
     # Content sources
     kiwix_library_url: str = Field(

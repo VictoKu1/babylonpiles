@@ -13,7 +13,7 @@ BabylonPiles is a modular, offline-first, open-source knowledge server for Raspb
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/VictoKu1/babylonpiles.git
+git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 ```
 
@@ -40,6 +40,7 @@ docker-compose up --build -d
 - **Multi-access**: Serve data via Wi-Fi, Ethernet, or direct web browser
 - **Admin control**: Add, update, or remove information through a web UI or CLI
 - **Auto-updates**: Sync content from trusted sources or repositories
+- **Mirrored source scheduling**: Run OpenStreetMap and Internet Archive mirror jobs through BabylonPiles-managed schedules
 - **Multi-user**: Share your knowledge base with family, teams, classrooms, or communities
 - **Open & extensible**: Build plugins for new content categories or automate your own data fetchers
 
@@ -49,7 +50,8 @@ docker-compose up --build -d
 - FastAPI backend with async SQLAlchemy
 - React frontend
 - JWT authentication
-- Kiwix, HTTP, and Torrent content sources
+- Kiwix, HTTP, Torrent, and Project Gutenberg content sources
+- EmergencyStorage-backed mirrored sources for OpenStreetMap and Internet Archive
 - System monitoring and metrics
 - Docker-first deployment
 - Mode switching (Learn/Store)
@@ -69,10 +71,13 @@ babylonpiles/
 │   │   └── schemas/           # Pydantic schemas
 │   ├── main.py               # Application entry point
 │   └── requirements.txt      # Python dependencies
-├── frontend/                  # React frontend (scaffolded)
+├── frontend/                  # React frontend
 │   ├── src/                  # React components
 │   ├── package.json          # Node.js dependencies
 │   └── index.html           # Main HTML file
+├── mirrorer/                 # Internal EmergencyStorage adapter service
+├── vendor/
+│   └── EmergencyStorage/     # Pinned Git submodule for mirrored sources
 ├── babylonpiles.sh            # Unified Docker helper script
 ├── docs/                      # Documentation
 │   └── INSTALL.md           # Installation guide
@@ -86,11 +91,12 @@ babylonpiles/
 1. **Backend API**: Complete REST API with all core endpoints
 2. **Database**: SQLAlchemy models with async support
 3. **Mode Management**: Learn/Store mode switching
-4. **Content Sources**: Kiwix, HTTP, and Torrent support
+4. **Content Sources**: Kiwix, HTTP, Torrent, and Gutenberg support
 5. **System Monitoring**: Real-time system metrics
 6. **Authentication**: JWT-based authentication
 7. **Docker-first deployment**
 8. **Storage Management**: Multi-location storage allocation, drive detection, allocation, and data migration
+9. **Mirrored Sources**: Scheduled OpenStreetMap and Internet Archive mirror jobs with run history
 
 ---
 
@@ -124,13 +130,14 @@ Open source under the [License](LICENSE)
 
 ## 🏗️ What Has Been Built
 
-**BabylonPiles** is now a fully scaffolded, modular offline knowledge NAS system with the following components:
+**BabylonPiles** is now a modular offline knowledge NAS system with the following components:
 
 ### ✅ Backend (Python FastAPI)
 - **Complete API structure** with FastAPI framework
 - **Database models** for Piles, Users, UpdateLogs, and SystemStatus
 - **Mode management** system for Learn/Store mode switching
-- **Content updater** with support for multiple sources (Kiwix, HTTP, Torrent)
+- **Content updater** with support for multiple sources (Kiwix, HTTP, Torrent, Gutenberg)
+- **Mirror scheduler** with persistent mirror jobs and run history
 - **System monitoring** with real-time metrics collection
 - **Authentication system** with JWT tokens
 - **Version control** with backup/restore functionality
@@ -140,6 +147,7 @@ Open source under the [License](LICENSE)
 - **Store Mode**: Offline mode with local network sharing
 - **Content Management**: CRUD operations for knowledge piles
 - **Update System**: Automated content downloading with progress tracking
+- **Mirror Management**: Scheduled mirrored-source execution with run logs
 - **System Monitoring**: CPU, memory, storage, and network monitoring
 - **Network Management**: WiFi hotspot and network configuration
 
@@ -147,6 +155,8 @@ Open source under the [License](LICENSE)
 - **Kiwix Integration**: Wikipedia ZIM files and other Kiwix content
 - **HTTP Downloads**: Direct file downloads from URLs
 - **Torrent Support**: BitTorrent protocol for large files
+- **Project Gutenberg**: Search and download public-domain books
+- **Mirrored Sources**: Scheduled OpenStreetMap and Internet Archive preservation jobs
 - **Local Files**: Manual file upload and management
 
 ### ✅ Setup & Deployment
@@ -168,10 +178,13 @@ babylonpiles/
 │   │   └── schemas/           # Pydantic schemas
 │   ├── main.py               # Application entry point
 │   └── requirements.txt      # Python dependencies
-├── frontend/                  # React frontend (scaffolded)
+├── frontend/                  # React frontend
 │   ├── src/                  # React components
 │   ├── package.json          # Node.js dependencies
 │   └── index.html           # Main HTML file
+├── mirrorer/                 # Internal EmergencyStorage adapter service
+├── vendor/
+│   └── EmergencyStorage/     # Pinned Git submodule for mirrored sources
 ├── babylonpiles.sh            # Unified Docker helper script
 ├── docs/                      # Documentation
 │   └── INSTALL.md           # Installation guide
@@ -185,11 +198,12 @@ babylonpiles/
 1. **Backend API**: Complete REST API with all core endpoints
 2. **Database**: SQLAlchemy models with async support
 3. **Mode Management**: Learn/Store mode switching
-4. **Content Sources**: Kiwix, HTTP, and Torrent support
+4. **Content Sources**: Kiwix, HTTP, Torrent, and Gutenberg support
 5. **System Monitoring**: Real-time system metrics
 6. **Authentication**: JWT-based authentication
 7. **Docker-first deployment**
 8. **Storage Management**: Multi-location storage allocation, drive detection, allocation, and data migration
+9. **Mirrored Sources**: Scheduled OpenStreetMap and Internet Archive mirror jobs with run history
 
 ### 🔄 In Progress
 1. **Frontend Development**: React UI components
@@ -206,10 +220,10 @@ babylonpiles/
 ## 🎯 Key Capabilities
 
 ### Learn Mode (Internet Sync)
-- Downloads content from Kiwix, HTTP, and torrent sources
+- Downloads content from Kiwix, HTTP, torrent, and Gutenberg sources
 - Automatic version control and backup
 - Progress tracking and error handling
-- Scheduled updates support
+- Scheduled updates support for piles and mirrored sources
 
 ### Store Mode (Offline Sharing)
 - WiFi hotspot for local network access
@@ -236,9 +250,9 @@ babylonpiles/
 - **Database**: SQLite with SQLAlchemy ORM
 - **Authentication**: JWT tokens
 - **Async Support**: Full async/await throughout
-- **Content Sources**: Kiwix, HTTP, BitTorrent
+- **Content Sources**: Kiwix, HTTP, BitTorrent, Gutenberg, mirrored sources
 
-### Frontend (Planned)
+### Frontend
 - **Framework**: React with TypeScript
 - **Styling**: Tailwind CSS
 - **State Management**: React Query
@@ -257,9 +271,9 @@ babylonpiles/
 | Kiwix             | ZIM files       | ✅ Complete | Wikipedia, medical, educational content |
 | HTTP/HTTPS        | Direct download | ✅ Complete | Any downloadable file                   |
 | BitTorrent        | Torrent files   | ✅ Basic    | Large file downloads                    |
-| Project Gutenberg | Books           | 🔄 Planned  | Public domain literature                |
-| OpenStreetMap     | Maps            | 🔄 Planned  | Offline map data                        |
-| Internet Archive  | Media           | 🔄 Planned  | Videos, documents, software             |
+| Project Gutenberg | Books           | ✅ Complete | Public domain literature via Gutendex   |
+| OpenStreetMap     | Maps            | ✅ Complete | Mirrored through EmergencyStorage       |
+| Internet Archive  | Media           | ✅ Complete | Mirrored through EmergencyStorage       |
 
 ## 🎉 Success Metrics
 
@@ -282,7 +296,7 @@ babylonpiles/
 
 ### Quick Start (Raspberry Pi)
 ```bash
-git clone https://github.com/VictoKu1/babylonpiles.git
+git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 chmod +x babylonpiles.sh
 ./babylonpiles.sh

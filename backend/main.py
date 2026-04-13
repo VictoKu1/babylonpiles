@@ -18,6 +18,8 @@ from app.core.database import init_db
 from app.api.v1.api import api_router
 from app.core.system import SystemManager
 from app.core.mode_manager import ModeManager
+from app.core.mirror_scheduler import MirrorScheduler
+from app.modules.updater import ContentUpdater
 
 # Configure logging
 logging.basicConfig(
@@ -29,11 +31,13 @@ logger = logging.getLogger(__name__)
 # Global system managers
 system_manager = None
 mode_manager = None
+content_updater = None
+mirror_scheduler = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global system_manager, mode_manager
+    global system_manager, mode_manager, content_updater, mirror_scheduler
     
     # Startup
     logger.info("Starting BabylonPiles backend...")
@@ -44,13 +48,20 @@ async def lifespan(app: FastAPI):
     # Initialize system managers
     system_manager = SystemManager()
     mode_manager = ModeManager()
+    content_updater = ContentUpdater()
+    mirror_scheduler = MirrorScheduler()
     
     # Set global managers in endpoints
     from app.api.v1.endpoints.system import set_managers
+    from app.api.v1.endpoints.updates import set_content_updater
+    from app.api.v1.endpoints.mirrors import set_mirror_scheduler
     set_managers(mode_manager, system_manager)
+    set_content_updater(content_updater)
+    set_mirror_scheduler(mirror_scheduler)
     
     # Start in Store mode by default (offline)
     await mode_manager.set_mode("store")
+    await mirror_scheduler.start()
     
     logger.info("BabylonPiles backend started successfully")
     
@@ -58,6 +69,10 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down BabylonPiles backend...")
+    if mirror_scheduler:
+        await mirror_scheduler.stop()
+    if content_updater:
+        await content_updater.cleanup()
     if system_manager:
         await system_manager.cleanup()
     if mode_manager:

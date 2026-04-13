@@ -14,10 +14,11 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Docker-only, OS-agnostic documentation
 
 ### Content Management
-- Modular content sources (Kiwix, HTTP, Torrent)
+- Modular content sources (Kiwix, HTTP, Torrent, Gutenberg)
 - Pile management (CRUD operations)
 - Content update system with progress tracking
 - Kiwix-Serve integration for .ZIM files
+- EmergencyStorage-backed mirrored sources for OpenStreetMap and Internet Archive
 - Content validation and error handling
 
 ### File Management
@@ -67,6 +68,7 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 ## Recent Features
 
 - Manual repository entry from the frontend (Quick Add): Users can now add custom repositories, which are stored in sources.json via the backend. If no Info URL is provided, the system adapts and hides the info button for those sources.
+- Mirrored Sources in Updates: Users can now create OpenStreetMap and Internet Archive mirror jobs, run them manually, schedule them in UTC, and inspect recent run logs from the UI.
 
 ---
 
@@ -90,7 +92,7 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - Content indexing and search functionality
 - Content discovery and recommendations
 - Content versioning and rollback
-- More content sources (Project Gutenberg, OpenStreetMap, Internet Archive)
+- More content sources (CD3WD, RSS, and custom source plugins)
 - Content categorization and tagging
 
 ### Admin & Management

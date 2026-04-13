@@ -11,10 +11,12 @@ services:
       - DATA_DIR=/mnt/babylonpiles/data
       - PILES_DIR=/mnt/babylonpiles/piles
       - STORAGE_URL=http://storage:8001
+      - MIRRORER_URL=http://mirrorer:8002
     networks:
       - babylonpiles-network
     depends_on:
       - storage
+      - mirrorer
     restart: unless-stopped
 
   frontend:
@@ -48,6 +50,17 @@ services:
     environment:
       - MAX_DRIVES=1 # Update this to match the number of drives above
       - CHUNK_SIZE=104857600
+    networks:
+      - babylonpiles-network
+    restart: unless-stopped
+
+  mirrorer:
+    build:
+      context: .
+      dockerfile: mirrorer/Dockerfile
+    volumes:
+      - babylonpiles_data:/mnt/babylonpiles/data
+      - ./storage/piles:/mnt/babylonpiles/piles
     networks:
       - babylonpiles-network
     restart: unless-stopped

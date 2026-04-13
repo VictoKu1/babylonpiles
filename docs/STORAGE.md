@@ -5,6 +5,7 @@
 BabylonPiles has two storage-related layers:
 - `storage/storage_service.py` runs the drive, chunk, allocation, and migration service directly.
 - The backend exposes file, pile, and system routes under `/api/v1/storage`, `/api/v1/files`, `/api/v1/piles`, and `/api/v1/system`.
+- Mirrored sources write into the shared piles volume through the internal `mirrorer` service while job state stays in the backend database.
 
 ## Storage Service
 
@@ -49,12 +50,14 @@ Implemented browser features:
 
 The browser stores permissions in `.permissions.json` and metadata in `.metadata.json` under `/mnt/babylonpiles/data`.
 
+Mirrored datasets also appear in this browser because they are stored under `/mnt/babylonpiles/piles/mirrors/...`.
+
 ## Piles
 
 `frontend/src/pages/Piles.tsx` manages pile creation and downloads.
 
 Implemented pile behaviors:
-- Add piles with `source_type` values of `kiwix`, `http`, or `torrent`.
+- Add piles with `source_type` values of `kiwix`, `http`, `torrent`, or `gutenberg`.
 - Validate source URLs before starting a download.
 - Start a download with `POST /api/v1/piles/{pile_id}/download-source`.
 - Show downloaded, downloading, and pending piles.
@@ -64,6 +67,27 @@ Implemented pile behaviors:
 - Show Project Gutenberg search results through `GET /api/v1/piles/gutenberg-search`.
 
 The backend prevents starting a second download while a pile is already downloading.
+
+## Mirrored Sources
+
+`backend/app/api/v1/endpoints/mirrors.py`, `backend/app/core/mirror_scheduler.py`, and `mirrorer/app.py` implement mirrored-source management.
+
+Implemented mirrored-source behavior:
+- Create persisted mirror jobs for fixed provider and variant pairs.
+- Schedule mirror runs with `daily`, `weekly`, or `monthly` UTC presets.
+- Trigger manual runs through `POST /api/v1/mirrors/jobs/{job_id}/run`.
+- Persist mirror run history, bytes written, and error details.
+- Tail local or proxied logs through `GET /api/v1/mirrors/runs/{run_id}/logs`.
+- Recover interrupted running jobs as failed after backend restart.
+
+Mirrored content layout:
+- `/mnt/babylonpiles/piles/mirrors/openstreetmap/planet/`
+- `/mnt/babylonpiles/piles/mirrors/internet_archive/software/`
+- `/mnt/babylonpiles/piles/mirrors/internet_archive/music/`
+- `/mnt/babylonpiles/piles/mirrors/internet_archive/movies/`
+- `/mnt/babylonpiles/piles/mirrors/internet_archive/texts/`
+
+The vendored EmergencyStorage scripts may create another dataset-specific directory inside those variant folders. The mirror adapter only passes fixed server-side command templates and does not accept arbitrary shell arguments from the frontend.
 
 ## Hotspot And User Config
 

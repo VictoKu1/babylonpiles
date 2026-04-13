@@ -8,15 +8,29 @@
 
 ### 1. Clone and Start
 ```bash
-git clone https://github.com/VictoKu1/babylonpiles.git
+git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 docker-compose up -d
+```
+
+For a full first-time build, prefer:
+
+```bash
+docker-compose up --build -d
+```
+
+If you already cloned the repo before mirrored sources were added, run:
+
+```bash
+git submodule update --init --recursive
 ```
 
 ### 2. Access Services
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8080
 - **API Docs**: http://localhost:8080/docs
+
+The `mirrorer` service is internal-only and is started automatically by Docker Compose. It does not expose a host port by default.
 
 ## Management Commands
 
@@ -26,6 +40,40 @@ docker-compose restart        # Restart services
 docker-compose logs -f        # View logs
 docker-compose up --build -d  # Rebuild and start
 ```
+
+When updating the repo later, refresh the vendored EmergencyStorage submodule before rebuilding:
+
+```bash
+git pull
+git submodule update --init --recursive
+docker-compose up --build -d
+```
+
+## Mirrored Sources
+
+BabylonPiles now ships with an EmergencyStorage-backed mirroring subsystem for large preserved datasets.
+
+Supported mirrored datasets:
+- OpenStreetMap planet
+- Internet Archive `software`
+- Internet Archive `music`
+- Internet Archive `movies`
+- Internet Archive `texts`
+
+Use the `Updates` page in the frontend to:
+- add one mirror job per provider and variant
+- enable or disable the job
+- configure daily, weekly, or monthly UTC schedules
+- run jobs manually
+- inspect recent log excerpts and latest run state
+
+Mirrored files land in the shared piles volume under:
+
+```text
+/mnt/babylonpiles/piles/mirrors/<provider>/<variant>/
+```
+
+See [MIRRORING.md](MIRRORING.md) for the full feature guide.
 
 ## Storage Configuration
 
@@ -268,7 +316,7 @@ services:
 
 ```bash
 # Clone and start BabylonPiles
-git clone https://github.com/VictoKu1/babylonpiles.git
+git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 
 # Start services
@@ -383,11 +431,17 @@ sudo systemctl restart ssh
 A: No. Docker Compose is now the only supported way to run BabylonPiles. This ensures a consistent, cross-platform experience.
 
 **Q: How do I update the app?**
-A: Pull the latest code and re-run `docker-compose up --build -d`.
+A: Pull the latest code, refresh submodules, and rebuild:
+
+```bash
+git pull
+git submodule update --init --recursive
+docker-compose up --build -d
+```
 
 ---
 
-For more details, see the [README.md](../README.md), [Storage Guide](STORAGE.md), or [API documentation](API.md). 
+For more details, see the [README.md](../README.md), [Mirrored Sources Guide](MIRRORING.md), [Storage Guide](STORAGE.md), or [API documentation](API.md). 
 
 ## Manual Repository Entry
 

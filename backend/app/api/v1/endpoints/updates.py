@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 # Global updater instance
 content_updater: ContentUpdater = None
 
+
+def set_content_updater(updater: ContentUpdater):
+    """Register the global content updater instance."""
+    global content_updater
+    content_updater = updater
+
 def get_content_updater() -> ContentUpdater:
     """Get content updater instance"""
     if content_updater is None:
