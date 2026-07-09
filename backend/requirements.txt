@@ -1,6 +1,6 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-python-multipart==0.0.27
+python-multipart==0.0.31
 aiofiles==23.2.1
 python-jose[cryptography]>=3.3.1
 passlib[bcrypt]==1.7.4
@@ -9,15 +9,15 @@ alembic==1.12.1
 aiosqlite==0.19.0
 psutil==5.9.6
 requests==2.33.0
-aiohttp==3.13.4
+aiohttp==3.14.1
 beautifulsoup4==4.12.2
 lxml==6.1.0
 pyyaml==6.0.1
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 pydantic==2.5.0
 pydantic-settings==2.1.0
 schedule==1.2.0
-gitpython==3.1.49
+gitpython==3.1.50
 torrent-parser==0.3.0
 qrcode[pil]==7.4.2
 Pillow==12.2.0

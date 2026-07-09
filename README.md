@@ -1,5 +1,7 @@
 # 🏛️ BabylonPiles
 
+> Recruiter-oriented project summary: [RECRUITER_BRIEF.md](RECRUITER_BRIEF.md)
+
 **Your offline, modular, open source vault of civilization's knowledge accessible anywhere, anytime, on any device.**
 
 ---
