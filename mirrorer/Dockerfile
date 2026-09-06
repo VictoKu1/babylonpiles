@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash curl ca-certificates \
+    && apt-get install -y --no-install-recommends bash curl ca-certificates tar gzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -12,7 +12,12 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY mirrorer /app
 COPY vendor/EmergencyStorage /vendor/EmergencyStorage
 
-RUN chmod +x /vendor/EmergencyStorage/emergency_storage.sh \
+RUN if [ ! -f /vendor/EmergencyStorage/emergency_storage.sh ]; then \
+        mkdir -p /vendor/EmergencyStorage; \
+        curl -fsSL https://codeload.github.com/VictoKu1/EmergencyStorage/tar.gz/8e66e8f9c6b21e4dbbf290386b9907caed4a9f6a \
+          | tar -xz --strip-components=1 -C /vendor/EmergencyStorage; \
+    fi \
+    && chmod +x /vendor/EmergencyStorage/emergency_storage.sh \
     && chmod +x /vendor/EmergencyStorage/scripts/*.sh
 
 ENV PYTHONUNBUFFERED=1
