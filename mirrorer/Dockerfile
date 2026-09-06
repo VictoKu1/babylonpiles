@@ -12,7 +12,12 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY mirrorer /app
 COPY vendor/EmergencyStorage /vendor/EmergencyStorage
 
-RUN chmod +x /vendor/EmergencyStorage/emergency_storage.sh \
+RUN if [ ! -f /vendor/EmergencyStorage/emergency_storage.sh ]; then \
+        mkdir -p /vendor/EmergencyStorage; \
+        curl -fsSL https://codeload.github.com/VictoKu1/EmergencyStorage/tar.gz/refs/heads/main \
+          | tar -xz --strip-components=1 -C /vendor/EmergencyStorage; \
+    fi \
+    && chmod +x /vendor/EmergencyStorage/emergency_storage.sh \
     && chmod +x /vendor/EmergencyStorage/scripts/*.sh
 
 ENV PYTHONUNBUFFERED=1
