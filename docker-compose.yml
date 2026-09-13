@@ -67,7 +67,16 @@ services:
 
   kiwix-serve:
     image: ghcr.io/kiwix/kiwix-tools:latest
-    command: /bin/sh -c "kiwix-serve --port=8080 --address=0.0.0.0 /data/*.zim"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        set -- /data/*.zim
+        if [ ! -f "$$1" ]; then
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><library version="20110515"></library>' > /tmp/empty-library.xml
+          set -- --library /tmp/empty-library.xml
+        fi
+        exec kiwix-serve --port=8080 --address=ipv4 "$$@"
     ports:
       - "8081:8080"
     volumes:

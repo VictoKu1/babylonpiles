@@ -12,7 +12,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY mirrorer /app
 COPY vendor/EmergencyStorage /vendor/EmergencyStorage
 
-RUN chmod +x /vendor/EmergencyStorage/emergency_storage.sh \
+# Windows checkouts may give the vendored Bash scripts CRLF line endings.
+RUN sed -i 's/\r$//' /vendor/EmergencyStorage/emergency_storage.sh /vendor/EmergencyStorage/scripts/*.sh \
+    && chmod +x /vendor/EmergencyStorage/emergency_storage.sh \
     && chmod +x /vendor/EmergencyStorage/scripts/*.sh
 
 ENV PYTHONUNBUFFERED=1

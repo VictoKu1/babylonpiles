@@ -43,6 +43,12 @@ cd babylonpiles
 ```
 
 ### 2. Manual Docker commands
+If you cloned without `--recurse-submodules`, initialize the required mirrorer dependency first:
+
+```bash
+git submodule update --init --recursive
+```
+
 ```bash
 docker-compose up --build -d  # Start everything
 docker-compose down           # Stop everything
@@ -108,6 +114,7 @@ docker-compose logs -f        # View logs
 ### ZIM File Viewing & Kiwix-Serve
 - View .ZIM files (offline Wikipedia, etc.) in-browser or via Kiwix-Serve
 - Kiwix-Serve runs in Docker and is accessible at http://localhost:8081/
+- With no ZIM files, Kiwix-Serve displays an empty library. After adding `.zim` files to `storage/piles`, run `docker-compose restart kiwix-serve` to load them.
 - Share ZIM content on your local network
 
 ### Backend Move API

@@ -19,7 +19,7 @@ For a full first-time build, prefer:
 docker-compose up --build -d
 ```
 
-If you already cloned the repo before mirrored sources were added, run:
+If you cloned without `--recurse-submodules`, or before mirrored sources were added, run this before building:
 
 ```bash
 git submodule update --init --recursive
