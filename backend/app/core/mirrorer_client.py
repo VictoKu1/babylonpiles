@@ -3,8 +3,11 @@ Async HTTP client for the internal mirrorer adapter service.
 """
 
 from typing import Any, Dict
+import os
+from pathlib import Path
 
 import httpx
+from app.core.secrets import load_secret
 
 
 class MirrorerClient:
@@ -12,8 +15,14 @@ class MirrorerClient:
 
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
+        service_key = load_secret(
+            "SERVICE_API_KEY",
+            Path(os.getenv("SERVICE_SECRETS_DIR", "/run/babylonpiles/secrets")) / "service.key",
+        )
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10.0, read=None, write=None, pool=None)
+            timeout=httpx.Timeout(connect=10.0, read=None, write=None, pool=None),
+            trust_env=False,
+            headers={"X-Service-Key": service_key},
         )
 
     async def run_job(

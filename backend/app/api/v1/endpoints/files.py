@@ -1,32 +1,60 @@
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 import os
 import json
+import html
+import stat as stat_types
+from pathlib import Path
 from typing import List, Dict, Any
 import urllib.parse
 from datetime import datetime
 from fastapi import status
+from app.core.config import settings
+from app.core.paths import resolve_path, validate_name, _reject_symlinks
+from app.core.transfers import save_upload, TransferTooLarge
 
 router = APIRouter()
 
-DATA_ROOT = "/mnt/babylonpiles/data"
+DATA_ROOT = settings.data_dir
 PERMISSIONS_FILE = os.path.join(DATA_ROOT, ".permissions.json")
 METADATA_FILE = os.path.join(DATA_ROOT, ".metadata.json")
 
-def load_permissions() -> Dict[str, bool]:
+def content_path(relative: str, allow_root: bool = False) -> Path:
+    try:
+        return resolve_path(DATA_ROOT, relative, allow_root=allow_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+def content_key(relative: str) -> str:
+    return content_path(relative).relative_to(Path(DATA_ROOT).resolve()).as_posix()
+
+def content_child(path: str, name: str) -> Path:
+    parent = content_path(path, allow_root=True)
+    try:
+        validate_name(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    relative = parent.relative_to(Path(DATA_ROOT).resolve()) / name
+    return content_path(relative.as_posix())
+
+def load_permissions() -> Dict[str, Any]:
     """Load file/folder permissions from the permissions file"""
     try:
         if os.path.exists(PERMISSIONS_FILE):
+            _reject_symlinks(Path(PERMISSIONS_FILE))
             with open(PERMISSIONS_FILE, 'r') as f:
-                return json.load(f)
+                permissions = json.load(f)
+                return permissions if isinstance(permissions, dict) else {}
         return {}
     except Exception:
         return {}
 
-def save_permissions(permissions: Dict[str, bool]):
+def save_permissions(permissions: Dict[str, Any]):
     """Save file/folder permissions to the permissions file"""
     try:
         os.makedirs(os.path.dirname(PERMISSIONS_FILE), exist_ok=True)
+        _reject_symlinks(Path(PERMISSIONS_FILE))
         with open(PERMISSIONS_FILE, 'w') as f:
             json.dump(permissions, f, indent=2)
     except Exception as e:
@@ -39,6 +67,7 @@ def load_metadata() -> Dict[str, Dict[str, Any]]:
     """Load file/folder metadata from the metadata file"""
     try:
         if os.path.exists(METADATA_FILE):
+            _reject_symlinks(Path(METADATA_FILE))
             with open(METADATA_FILE, 'r') as f:
                 return json.load(f)
         return {}
@@ -49,6 +78,7 @@ def save_metadata(metadata: Dict[str, Dict[str, Any]]):
     """Save file/folder metadata to the metadata file"""
     try:
         os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True)
+        _reject_symlinks(Path(METADATA_FILE))
         with open(METADATA_FILE, 'w') as f:
             json.dump(metadata, f, indent=2)
     except Exception as e:
@@ -60,12 +90,12 @@ def save_metadata(metadata: Dict[str, Dict[str, Any]]):
 def get_file_metadata(file_path: str) -> Dict[str, Any]:
     """Get metadata for a file or folder"""
     metadata = load_metadata()
-    return metadata.get(file_path, {})
+    return metadata.get(content_key(file_path), {})
 
 def set_file_metadata(file_path: str, metadata: Dict[str, Any]):
     """Set metadata for a file or folder"""
     all_metadata = load_metadata()
-    all_metadata[file_path] = metadata
+    all_metadata[content_key(file_path)] = metadata
     save_metadata(all_metadata)
 
 def update_file_metadata(file_path: str, creator: str = "admin"):
@@ -84,32 +114,121 @@ def update_file_metadata(file_path: str, creator: str = "admin"):
     set_file_metadata(file_path, metadata)
 
 def get_file_permission(file_path: str) -> bool:
-    """Get the public/private status of a file or folder"""
-    permissions = load_permissions()
-    return permissions.get(file_path, False)  # Default to private
+    """A share applies to the identified content, never a reusable pathname."""
+    path = content_path(file_path)
+    key = path.relative_to(Path(DATA_ROOT).resolve()).as_posix()
+    try:
+        return _permission_matches(load_permissions().get(key), path.stat())
+    except (OSError, ValueError):
+        return False
 
 def set_file_permission(file_path: str, is_public: bool):
-    """Set the public/private status of a file or folder"""
+    """Bind an explicit share to the current file identity; old booleans are private."""
+    path = content_path(file_path)
+    key = path.relative_to(Path(DATA_ROOT).resolve()).as_posix()
     permissions = load_permissions()
-    permissions[file_path] = is_public
+    if is_public:
+        permissions[key] = {"version": 1, "identity": _content_identity(path.stat())}
+    else:
+        permissions.pop(key, None)
     save_permissions(permissions)
+
+def _content_identity(info) -> Dict[str, Any]:
+    identity = {"device": info.st_dev, "inode": info.st_ino}
+    if stat_types.S_ISDIR(info.st_mode):
+        return {**identity, "kind": "directory"}
+    if not stat_types.S_ISREG(info.st_mode):
+        raise ValueError("Only regular files and directories can be shared")
+    return {**identity, "kind": "file", "mtime_ns": info.st_mtime_ns,
+            "ctime_ns": info.st_ctime_ns, "size": info.st_size}
+
+def _permission_matches(record, info) -> bool:
+    return (isinstance(record, dict) and record.get("version") == 1
+            and record.get("identity") == _content_identity(info))
+
+class PublicFileResponse(StreamingResponse):
+    """Stream the authorized descriptor and close it even on disconnect/errors."""
+    def __init__(self, source, identity, filename):
+        self.source = source
+        # Unlink/rename may update ctime while the already-open bytes stay valid.
+        self.identity = {key: value for key, value in identity.items() if key != "ctime_ns"}
+        headers = {
+            "Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(filename, safe=""),
+            "Content-Length": str(identity["size"]),
+            "Cache-Control": "private, no-store",
+        }
+        super().__init__(self._chunks(), media_type="application/octet-stream", headers=headers)
+
+    def _unchanged(self):
+        identity = _content_identity(os.fstat(self.source.fileno()))
+        identity.pop("ctime_ns", None)
+        if identity != self.identity:
+            raise RuntimeError("Shared file changed during download")
+
+    async def _chunks(self):
+        try:
+            while True:
+                self._unchanged()
+                chunk = await run_in_threadpool(self.source.read, 64 * 1024)
+                self._unchanged()
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            self.source.close()
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.source.close()
+
+def public_file_response(file_path: str) -> StreamingResponse:
+    """Open first, authorize fstat, then stream that same descriptor."""
+    path = content_path(file_path)
+    key = path.relative_to(Path(DATA_ROOT).resolve()).as_posix()
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+             | getattr(os, "O_BINARY", 0))
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="File cannot be opened safely") from exc
+    source = None
+    try:
+        info = os.fstat(descriptor)
+        if not stat_types.S_ISREG(info.st_mode):
+            raise HTTPException(status_code=404, detail="File not found")
+        if not _permission_matches(load_permissions().get(key), info):
+            raise HTTPException(status_code=403, detail="File is not public")
+        source = os.fdopen(descriptor, "rb")
+        return PublicFileResponse(source, _content_identity(info), path.name)
+    except BaseException:
+        if source is not None:
+            source.close()
+        else:
+            os.close(descriptor)
+        raise
 
 @router.get("")
 def list_files(path: str = "") -> Dict[str, Any]:
     """List files and directories under the given path (relative to DATA_ROOT)."""
-    abs_path = os.path.abspath(os.path.join(DATA_ROOT, path))
-    if not abs_path.startswith(os.path.abspath(DATA_ROOT)):
-        raise HTTPException(status_code=400, detail="Invalid path")
+    abs_path = content_path(path, allow_root=True)
     if not os.path.exists(abs_path):
         raise HTTPException(status_code=404, detail="Path not found")
+    if not os.path.isdir(abs_path):
+        raise HTTPException(status_code=400, detail="Path is not a directory")
     
     items = []
     for entry in os.scandir(abs_path):
         # Skip the metadata and permissions files
-        if entry.name in [".permissions.json", ".metadata.json"]:
+        if entry.is_symlink():
             continue
-            
-        item_path = os.path.relpath(entry.path, DATA_ROOT)
+        try:
+            item_path = content_key(Path(entry.path).relative_to(Path(DATA_ROOT).resolve()).as_posix())
+        except HTTPException:
+            continue
         stat = entry.stat()
         
         # Get metadata
@@ -133,9 +252,7 @@ def list_files(path: str = "") -> Dict[str, Any]:
 @router.get("/download")
 def download_file(path: str = Query(..., description="Path relative to data root")):
     """Download or view a file from the data directory."""
-    abs_path = os.path.abspath(os.path.join(DATA_ROOT, path))
-    if not abs_path.startswith(os.path.abspath(DATA_ROOT)):
-        raise HTTPException(status_code=400, detail="Invalid path")
+    abs_path = content_path(path)
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(abs_path, filename=os.path.basename(abs_path))
@@ -146,29 +263,25 @@ async def upload_file(
     path: str = Form("")
 ) -> Dict[str, Any]:
     """Upload a file to the specified path (relative to DATA_ROOT)."""
-    abs_path = os.path.abspath(os.path.join(DATA_ROOT, path))
-    if not abs_path.startswith(os.path.abspath(DATA_ROOT)):
-        raise HTTPException(status_code=400, detail="Invalid path")
-    
-    # Create directory if it doesn't exist
-    os.makedirs(abs_path, exist_ok=True)
-    
-    # Save file
-    file_path = os.path.join(abs_path, file.filename)
+    file_path = content_child(path, file.filename)
     try:
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
+        await save_upload(file, file_path, settings.max_upload_size)
         
         # Update metadata for the uploaded file
-        relative_file_path = os.path.relpath(file_path, DATA_ROOT)
+        relative_file_path = file_path.relative_to(Path(DATA_ROOT).resolve()).as_posix()
         update_file_metadata(relative_file_path, creator="admin")
         
         return {
             "success": True,
             "message": f"File {file.filename} uploaded successfully",
-            "file_path": os.path.relpath(file_path, DATA_ROOT)
+            "file_path": relative_file_path
         }
+    except TransferTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
@@ -178,26 +291,18 @@ async def create_folder(
     path: str = Form("")
 ) -> Dict[str, Any]:
     """Create a new folder in the specified path (relative to DATA_ROOT)."""
-    abs_path = os.path.abspath(os.path.join(DATA_ROOT, path))
-    if not abs_path.startswith(os.path.abspath(DATA_ROOT)):
-        raise HTTPException(status_code=400, detail="Invalid path")
-    
-    # Create parent directory if it doesn't exist
-    os.makedirs(abs_path, exist_ok=True)
-    
-    # Create new folder
-    new_folder_path = os.path.join(abs_path, folder_name)
+    new_folder_path = content_child(path, folder_name)
     try:
         os.makedirs(new_folder_path, exist_ok=False)
         
         # Update metadata for the created folder
-        relative_folder_path = os.path.relpath(new_folder_path, DATA_ROOT)
+        relative_folder_path = new_folder_path.relative_to(Path(DATA_ROOT).resolve()).as_posix()
         update_file_metadata(relative_folder_path, creator="admin")
         
         return {
             "success": True,
             "message": f"Folder {folder_name} created successfully",
-            "folder_path": os.path.relpath(new_folder_path, DATA_ROOT)
+            "folder_path": relative_folder_path
         }
     except FileExistsError:
         raise HTTPException(status_code=400, detail=f"Folder {folder_name} already exists")
@@ -209,9 +314,7 @@ async def delete_item(
     path: str = Query(..., description="Path relative to data root")
 ) -> Dict[str, Any]:
     """Delete a file or folder from the data directory."""
-    abs_path = os.path.abspath(os.path.join(DATA_ROOT, path))
-    if not abs_path.startswith(os.path.abspath(DATA_ROOT)):
-        raise HTTPException(status_code=400, detail="Invalid path")
+    abs_path = content_path(path)
     if not os.path.exists(abs_path):
         raise HTTPException(status_code=404, detail="Item not found")
     
@@ -235,9 +338,9 @@ async def delete_item(
 async def view_file(file_path: str) -> Dict[str, Any]:
     """View a file in the browser - returns file info and viewing options"""
     try:
-        # Decode the file path
-        decoded_path = urllib.parse.unquote(file_path)
-        full_path = os.path.join(DATA_ROOT, decoded_path)
+        # Validate the canonical path (the framework already decoded the URL)
+        decoded_path = content_key(file_path)
+        full_path = content_path(decoded_path)
         
         if not os.path.exists(full_path):
             raise HTTPException(
@@ -286,9 +389,9 @@ async def view_file(file_path: str) -> Dict[str, Any]:
 async def preview_file(file_path: str):
     """Preview a file in the browser - serves file content with appropriate headers"""
     try:
-        # Decode the file path
-        decoded_path = urllib.parse.unquote(file_path)
-        full_path = os.path.join(DATA_ROOT, decoded_path)
+        # Validate the canonical path (the framework already decoded the URL)
+        decoded_path = content_key(file_path)
+        full_path = content_path(decoded_path)
         
         if not os.path.exists(full_path):
             raise HTTPException(
@@ -304,18 +407,12 @@ async def preview_file(file_path: str):
         
         file_extension = os.path.splitext(full_path)[1].lower()
         
-        # For ZIM files, ensure we support range requests
+        # Serve ZIM files using the authenticated same-origin download path.
         if file_extension == '.zim':
             return FileResponse(
                 full_path,
                 media_type='application/x-zim',
-                filename=os.path.basename(full_path),
-                headers={
-                    'Accept-Ranges': 'bytes',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Range, Content-Range'
-                }
+                filename=os.path.basename(full_path)
             )
         
         # For images, PDFs, and other viewable files, serve directly
@@ -351,9 +448,9 @@ async def preview_file(file_path: str):
 async def zim_viewer(file_path: str):
     """Serve ZIM file viewer HTML page"""
     try:
-        # Decode the file path
-        decoded_path = urllib.parse.unquote(file_path)
-        full_path = os.path.join(DATA_ROOT, decoded_path)
+        # Validate the canonical path (the framework already decoded the URL)
+        decoded_path = content_key(file_path)
+        full_path = content_path(decoded_path)
         
         if not os.path.exists(full_path):
             raise HTTPException(
@@ -361,20 +458,22 @@ async def zim_viewer(file_path: str):
                 detail="ZIM file not found"
             )
         
-        if not full_path.lower().endswith('.zim'):
+        if not str(full_path).lower().endswith('.zim'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="File is not a ZIM file"
             )
         
-        # Create a simple ZIM viewer HTML page
+        safe_name = html.escape(os.path.basename(full_path), quote=True)
+        download_url = html.escape("/api/v1/files/download?" + urllib.parse.urlencode({"path": decoded_path}), quote=True)
+        # Escape display text independently from the encoded URL attribute.
         zim_viewer_html = f"""
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>ZIM Viewer - {os.path.basename(full_path)}</title>
+            <title>ZIM Viewer - {safe_name}</title>
             <style>
                 body {{
                     font-family: Arial, sans-serif;
@@ -443,14 +542,14 @@ async def zim_viewer(file_path: str):
                 <div class="header">
                     <h1>ZIM File Viewer</h1>
                     <div>
-                        <a href="/api/v1/files/download/{file_path}" class="download-btn">Download</a>
+                        <a href="{download_url}" class="download-btn">Download</a>
                         <a href="javascript:history.back()" class="back-btn">Back</a>
                     </div>
                 </div>
                 
                 <div class="file-info">
                     <h3>File Information</h3>
-                    <p><strong>Name:</strong> {os.path.basename(full_path)}</p>
+                    <p><strong>Name:</strong> {safe_name}</p>
                     <p><strong>Size:</strong> {format_file_size(os.path.getsize(full_path))}</p>
                     <p><strong>Type:</strong> ZIM Archive (Offline Wikipedia/Knowledge Base)</p>
                 </div>
@@ -525,9 +624,9 @@ async def get_download_status() -> Dict[str, Any]:
 async def get_file_permission_status(file_path: str) -> Dict[str, Any]:
     """Get the public/private status of a specific file or folder"""
     try:
-        # Decode the file path
-        decoded_path = urllib.parse.unquote(file_path)
-        full_path = os.path.join(DATA_ROOT, decoded_path)
+        # Validate the canonical path (the framework already decoded the URL)
+        decoded_path = content_key(file_path)
+        full_path = content_path(decoded_path)
         
         if not os.path.exists(full_path):
             raise HTTPException(
@@ -559,9 +658,9 @@ async def get_file_permission_status(file_path: str) -> Dict[str, Any]:
 async def toggle_file_permission(file_path: str) -> Dict[str, Any]:
     """Toggle the public/private status of a specific file or folder"""
     try:
-        # Decode the file path
-        decoded_path = urllib.parse.unquote(file_path)
-        full_path = os.path.join(DATA_ROOT, decoded_path)
+        # Validate the canonical path (the framework already decoded the URL)
+        decoded_path = content_key(file_path)
+        full_path = content_path(decoded_path)
         
         if not os.path.exists(full_path):
             raise HTTPException(
@@ -600,9 +699,9 @@ async def set_file_permission_status(
 ) -> Dict[str, Any]:
     """Set the public/private status of a specific file or folder"""
     try:
-        # Decode the file path
-        decoded_path = urllib.parse.unquote(file_path)
-        full_path = os.path.join(DATA_ROOT, decoded_path)
+        # Validate the canonical path (the framework already decoded the URL)
+        decoded_path = content_key(file_path)
+        full_path = content_path(decoded_path)
         
         if not os.path.exists(full_path):
             raise HTTPException(
@@ -635,9 +734,9 @@ async def set_file_permission_status(
 async def get_file_metadata_info(file_path: str) -> Dict[str, Any]:
     """Get detailed metadata information for a specific file or folder"""
     try:
-        # Decode the file path
-        decoded_path = urllib.parse.unquote(file_path)
-        full_path = os.path.join(DATA_ROOT, decoded_path)
+        # Validate the canonical path (the framework already decoded the URL)
+        decoded_path = content_key(file_path)
+        full_path = content_path(decoded_path)
         
         if not os.path.exists(full_path):
             raise HTTPException(
@@ -802,10 +901,8 @@ async def move_item(
     dest_path: str = Form(...)
 ) -> Dict[str, Any]:
     """Move or rename a file or folder."""
-    abs_src = os.path.abspath(os.path.join(DATA_ROOT, src_path))
-    abs_dest = os.path.abspath(os.path.join(DATA_ROOT, dest_path))
-    if not abs_src.startswith(os.path.abspath(DATA_ROOT)) or not abs_dest.startswith(os.path.abspath(DATA_ROOT)):
-        raise HTTPException(status_code=400, detail="Invalid path")
+    abs_src = content_path(src_path)
+    abs_dest = content_path(dest_path)
     if not os.path.exists(abs_src):
         raise HTTPException(status_code=404, detail="Source not found")
     if os.path.exists(abs_dest):
@@ -817,4 +914,4 @@ async def move_item(
             "message": f"Moved {src_path} to {dest_path}"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error moving item: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error moving item: {str(e)}")

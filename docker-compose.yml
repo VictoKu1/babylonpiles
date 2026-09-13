@@ -7,11 +7,23 @@ services:
       - babylonpiles_data:/mnt/babylonpiles/data
       - ./storage/piles:/mnt/babylonpiles/piles
       - ./.git:/app/.git:ro
+      - backend_state:/app/state
+      - service_secrets:/run/babylonpiles/secrets
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - STATE_DIR=/app/state
       - DATA_DIR=/mnt/babylonpiles/data
       - PILES_DIR=/mnt/babylonpiles/piles
       - STORAGE_URL=http://storage:8001
       - MIRRORER_URL=http://mirrorer:8002
+      - PUBLIC_ORIGIN=${PUBLIC_ORIGIN:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-104857600}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-1073741824}
+      - MAX_CATALOG_SIZE=${MAX_CATALOG_SIZE:-8388608}
     networks:
       - babylonpiles-network
     depends_on:
@@ -26,6 +38,8 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    environment:
+      - BACKEND_PROXY_URL=http://backend:8080
     networks:
       - babylonpiles-network
     depends_on:
@@ -33,9 +47,9 @@ services:
     restart: unless-stopped
 
   storage:
-    build: ./storage
-    ports:
-      - "8001:8001"
+    build:
+      context: .
+      dockerfile: storage/Dockerfile
     volumes:
       # Default storage location in current directory
       - ./storage/info:/mnt/hdd1
@@ -47,9 +61,11 @@ services:
 
       # Storage container data
       - storage_data:/app/data
+      - service_secrets:/run/babylonpiles/secrets
     environment:
       - MAX_DRIVES=1 # Update this to match the number of drives above
       - CHUNK_SIZE=104857600
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-1073741824}
     networks:
       - babylonpiles-network
     restart: unless-stopped
@@ -61,6 +77,7 @@ services:
     volumes:
       - babylonpiles_data:/mnt/babylonpiles/data
       - ./storage/piles:/mnt/babylonpiles/piles
+      - service_secrets:/run/babylonpiles/secrets
     networks:
       - babylonpiles-network
     restart: unless-stopped
@@ -78,9 +95,9 @@ services:
         fi
         exec kiwix-serve --port=8080 --address=ipv4 "$$@"
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     volumes:
-      - ./storage/piles:/data
+      - ./storage/piles:/data:ro
     networks:
       - babylonpiles-network
     restart: unless-stopped
@@ -89,6 +106,8 @@ volumes:
   babylonpiles_data:
   babylonpiles_piles:
   storage_data:
+  backend_state:
+  service_secrets:
 
 networks:
   babylonpiles-network:

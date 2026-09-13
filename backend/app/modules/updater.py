@@ -7,6 +7,7 @@ import logging
 import os
 import hashlib
 import shutil
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -14,6 +15,7 @@ import aiohttp
 import aiofiles
 
 from app.core.config import settings
+from app.core.paths import resolve_path, validate_name, validate_stored_path
 from app.models.pile import Pile
 from app.models.update_log import UpdateLog
 from app.modules.sources.kiwix import KiwixSource
@@ -22,6 +24,24 @@ from app.modules.sources.http import HTTPSource
 from app.modules.sources.gutenberg import GutenbergSource
 
 logger = logging.getLogger(__name__)
+
+def managed_pile_path(file_path: str) -> Path:
+    """Legacy pile files may live in either configured content directory."""
+    for root in (settings.piles_dir, settings.data_dir):
+        try:
+            return validate_stored_path(root, file_path)
+        except ValueError:
+            continue
+    raise ValueError("Pile file is outside the configured content directories")
+
+def backup_directory(pile: Pile) -> Path:
+    return resolve_path(settings.data_dir, f"backups/{validate_name(pile.name)}")
+
+def backup_filename(version: str) -> str:
+    if not re.fullmatch(r"\d{8}_\d{6}", version):
+        raise ValueError("Invalid backup version")
+    datetime.strptime(version, "%Y%m%d_%H%M%S")
+    return f"{version}.backup"
 
 class ContentUpdater:
     """Manages content updates from various sources"""
@@ -39,6 +59,9 @@ class ContentUpdater:
     async def update_pile(self, pile: Pile, update_log: UpdateLog) -> bool:
         """Update a pile from its source"""
         try:
+            validate_name(pile.name)
+            if pile.file_path:
+                managed_pile_path(pile.file_path)
             logger.info(f"Starting update for pile: {pile.name}")
             
             # Get source handler
@@ -83,16 +106,23 @@ class ContentUpdater:
             logger.info(f"Rolling back pile: {pile.name}")
             
             # Find backup file
-            backup_dir = Path(settings.data_dir) / "backups" / pile.name
+            backup_dir = backup_directory(pile)
             if not backup_dir.exists():
                 logger.error(f"No backups found for pile: {pile.name}")
                 return False
             
             # Get latest backup or specific version
             if version:
-                backup_file = backup_dir / f"{version}.backup"
+                backup_file = resolve_path(backup_dir, backup_filename(version))
             else:
-                backup_files = list(backup_dir.glob("*.backup"))
+                backup_files = []
+                for candidate in backup_dir.glob("*.backup"):
+                    try:
+                        safe_file = resolve_path(backup_dir, backup_filename(candidate.stem))
+                        if safe_file.is_file():
+                            backup_files.append(safe_file)
+                    except ValueError:
+                        continue
                 if not backup_files:
                     logger.error(f"No backup files found for pile: {pile.name}")
                     return False
@@ -119,20 +149,23 @@ class ContentUpdater:
     async def _create_backup(self, pile: Pile) -> Optional[str]:
         """Create backup of current pile file"""
         try:
-            if not pile.file_path or not os.path.exists(pile.file_path):
+            validate_name(pile.name)
+            if not pile.file_path:
+                return None
+            source_path = managed_pile_path(pile.file_path)
+            if not source_path.is_file():
                 return None
             
             # Create backup directory
-            backup_dir = Path(settings.data_dir) / "backups" / pile.name
+            backup_dir = backup_directory(pile)
             backup_dir.mkdir(parents=True, exist_ok=True)
             
             # Create backup filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"{timestamp}.backup"
-            backup_path = backup_dir / backup_filename
+            backup_path = resolve_path(backup_dir, backup_filename(timestamp))
             
             # Copy file
-            shutil.copy2(pile.file_path, backup_path)
+            shutil.copy2(source_path, backup_path)
             
             logger.info(f"Created backup: {backup_path}")
             return str(backup_path)
@@ -144,17 +177,22 @@ class ContentUpdater:
     async def _restore_backup(self, pile: Pile, backup_path: str) -> bool:
         """Restore pile from backup"""
         try:
-            if not os.path.exists(backup_path):
+            backup_dir = backup_directory(pile)
+            source_path = validate_stored_path(backup_dir, backup_path)
+            if source_path.name != backup_filename(source_path.stem):
+                raise ValueError("Invalid backup filename")
+            if not source_path.is_file():
                 logger.error(f"Backup file not found: {backup_path}")
                 return False
             
-            # Ensure piles directory exists
-            piles_dir = Path(settings.piles_dir)
-            piles_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Restore file
-            target_path = piles_dir / f"{pile.name}{Path(backup_path).suffix}"
-            shutil.copy2(backup_path, target_path)
+            if pile.file_path:
+                target_path = managed_pile_path(pile.file_path)
+            else:
+                file_format = getattr(pile, "file_format", None) or "backup"
+                validate_name(file_format)
+                target_path = resolve_path(settings.piles_dir, f"{pile.name}.{file_format}")
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, target_path)
             
             # Update pile metadata
             pile.file_path = str(target_path)
@@ -171,6 +209,9 @@ class ContentUpdater:
     async def _update_pile_metadata(self, pile: Pile, update_log: UpdateLog):
         """Update pile metadata after successful update"""
         try:
+            validate_name(pile.name)
+            if pile.file_path:
+                pile.file_path = str(managed_pile_path(pile.file_path))
             if pile.file_path and os.path.exists(pile.file_path):
                 # Calculate checksum
                 checksum = await self._calculate_checksum(pile.file_path)
@@ -199,6 +240,7 @@ class ContentUpdater:
     async def _calculate_checksum(self, file_path: str) -> str:
         """Calculate SHA256 checksum of file"""
         try:
+            file_path = str(managed_pile_path(file_path))
             hash_sha256 = hashlib.sha256()
             async with aiofiles.open(file_path, "rb") as f:
                 while chunk := await f.read(8192):
@@ -251,4 +293,4 @@ class ContentUpdater:
         if self._active_downloads:
             await asyncio.gather(*self._active_downloads.values(), return_exceptions=True)
         
-        self._active_downloads.clear() 
+        self._active_downloads.clear()

@@ -9,6 +9,8 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import logging
 import os
+from pathlib import Path
+from app.core.secrets import load_secret
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +18,13 @@ logger = logging.getLogger(__name__)
 class StorageClient:
     def __init__(self, storage_url: str):
         self.storage_url = storage_url
-        self.client = httpx.AsyncClient(timeout=30.0)
+        service_key = load_secret(
+            "SERVICE_API_KEY",
+            Path(os.getenv("SERVICE_SECRETS_DIR", "/run/babylonpiles/secrets")) / "service.key",
+        )
+        self.client = httpx.AsyncClient(
+            timeout=30.0, trust_env=False, headers={"X-Service-Key": service_key}
+        )
 
     async def health_check(self) -> bool:
         """Check if storage service is healthy"""

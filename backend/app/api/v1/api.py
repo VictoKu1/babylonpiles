@@ -2,16 +2,17 @@
 Main API router for BabylonPiles
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.api.v1.endpoints import piles, system, auth, updates, files, storage, mirrors
 
 api_router = APIRouter()
 
 # Include all endpoint routers
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
-api_router.include_router(system.router, prefix="/system", tags=["system"])
-api_router.include_router(piles.router, prefix="/piles", tags=["piles"])
-api_router.include_router(updates.router, prefix="/updates", tags=["updates"])
-api_router.include_router(mirrors.router, prefix="/mirrors", tags=["mirrors"])
-api_router.include_router(files.router, prefix="/files", tags=["files"])
-api_router.include_router(storage.router, prefix="/storage", tags=["storage"])
+api_router.include_router(system.public_router, prefix="/system", tags=["public-content"])
+for route, prefix, tag in [
+    (system.router, "/system", "system"), (piles.router, "/piles", "piles"),
+    (updates.router, "/updates", "updates"), (mirrors.router, "/mirrors", "mirrors"),
+    (files.router, "/files", "files"), (storage.router, "/storage", "storage"),
+]:
+    api_router.include_router(route, prefix=prefix, tags=[tag], dependencies=[Depends(auth.require_admin)])

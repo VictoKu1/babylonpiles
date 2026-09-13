@@ -128,7 +128,7 @@ export function Dashboard() {
   const handleStartHotspot = async () => {
     setHotspotLoading(true);
     try {
-      const response = await fetch("http://localhost:8080/api/v1/system/hotspot/start", {
+      const response = await fetch("/api/v1/system/hotspot/start", {
         method: "POST",
       });
 
@@ -151,7 +151,7 @@ export function Dashboard() {
   const handleStopHotspot = async () => {
     setHotspotLoading(true);
     try {
-      const response = await fetch("http://localhost:8080/api/v1/system/hotspot/stop", {
+      const response = await fetch("/api/v1/system/hotspot/stop", {
         method: "POST",
       });
 
@@ -174,7 +174,7 @@ export function Dashboard() {
   const handleApproveRequest = async (requestId: string) => {
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/system/hotspot/approve-request/${requestId}`,
+        `/api/v1/system/hotspot/approve-request/${requestId}`,
         {
           method: "POST",
         }
@@ -198,7 +198,7 @@ export function Dashboard() {
   const handleRejectRequest = async (requestId: string, reason: string = "") => {
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/system/hotspot/reject-request/${requestId}`,
+        `/api/v1/system/hotspot/reject-request/${requestId}`,
         {
           method: "POST",
           headers: {
@@ -225,7 +225,7 @@ export function Dashboard() {
 
   const checkHotspotRequirements = async () => {
     try {
-      const response = await fetch("http://localhost:8080/api/v1/system/hotspot/requirements");
+      const response = await fetch("/api/v1/system/hotspot/requirements");
       
       if (response.ok) {
         const result = await response.json();
@@ -249,7 +249,7 @@ export function Dashboard() {
 
     setUserNameLoading(true);
     try {
-      const response = await fetch("http://localhost:8080/api/v1/system/user/config", {
+      const response = await fetch("/api/v1/system/user/config", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -285,7 +285,7 @@ export function Dashboard() {
       setError(null);
 
       // Fetch piles with detailed information
-      const pilesResponse = await fetch("http://localhost:8080/api/v1/piles/");
+      const pilesResponse = await fetch("/api/v1/piles/");
       const pilesData = pilesResponse.ok
         ? await pilesResponse.json()
         : { total: 0, data: [] };
@@ -319,7 +319,7 @@ export function Dashboard() {
 
       // Fetch system status
       const statusResponse = await fetch(
-        "http://localhost:8080/api/v1/system/status"
+        "/api/v1/system/status"
       );
       const statusData = statusResponse.ok
         ? await statusResponse.json()
@@ -327,7 +327,7 @@ export function Dashboard() {
 
       // Fetch system mode
       const modeResponse = await fetch(
-        "http://localhost:8080/api/v1/system/mode"
+        "/api/v1/system/mode"
       );
       const modeData = modeResponse.ok
         ? await modeResponse.json()
@@ -335,14 +335,14 @@ export function Dashboard() {
 
       // Fetch system metrics for disk usage
       const metricsResponse = await fetch(
-        "http://localhost:8080/api/v1/system/metrics"
+        "/api/v1/system/metrics"
       );
       const metricsData = metricsResponse.ok
         ? await metricsResponse.json()
         : { data: { disk: { total_bytes: 0, used_bytes: 0, free_bytes: 0 } } };
 
       // Fetch files to calculate content storage
-      const filesResponse = await fetch("http://localhost:8080/api/v1/files?path=");
+      const filesResponse = await fetch("/api/v1/files?path=");
       const filesData = filesResponse.ok
         ? await filesResponse.json()
         : { items: [] };
@@ -382,7 +382,7 @@ export function Dashboard() {
 
       // Fetch hotspot status
       const hotspotResponse = await fetch(
-        "http://localhost:8080/api/v1/system/hotspot/status"
+        "/api/v1/system/hotspot/status"
       );
       const hotspotData = hotspotResponse.ok
         ? await hotspotResponse.json()

@@ -9,6 +9,8 @@ import Browse from './pages/Browse'
 import { ZimViewer } from './pages/ZimViewer'
 import { Login } from './pages/Login'
 import { AuthProvider } from './contexts/AuthContext'
+import { RequireAdmin } from './components/RequireAdmin'
+import { HotspotClient } from './pages/HotspotClient'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
   constructor(props: any) {
@@ -46,13 +48,16 @@ function App() {
         <div className="min-h-screen bg-gray-50">
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="piles" element={<Piles />} />
-              <Route path="system" element={<System />} />
-              <Route path="updates" element={<Updates />} />
-              <Route path="browse" element={<Browse />} />
-              <Route path="zim-viewer/:filePath" element={<ZimViewer />} />
+            <Route path="/hotspot" element={<HotspotClient />} />
+            <Route element={<RequireAdmin />}>
+              <Route path="/" element={<Layout />}>
+                <Route index element={<Dashboard />} />
+                <Route path="piles" element={<Piles />} />
+                <Route path="system" element={<System />} />
+                <Route path="updates" element={<Updates />} />
+                <Route path="browse" element={<Browse />} />
+                <Route path="zim-viewer/:filePath" element={<ZimViewer />} />
+              </Route>
             </Route>
           </Routes>
         </div>
@@ -61,4 +66,4 @@ function App() {
   )
 }
 
-export default App 
+export default App

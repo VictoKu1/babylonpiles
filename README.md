@@ -56,10 +56,15 @@ docker-compose restart        # Restart services
 docker-compose logs -f        # View logs
 ```
 
-### 3. Access the app
-- Backend API: http://localhost:8080
-- API Documentation: http://localhost:8080/docs
-- Frontend: http://localhost:3000
+### 3. Create an administrator and sign in
+
+```bash
+docker compose exec backend python -m app.admin create --username admin
+```
+
+Enter and confirm a password of at least 12 characters when prompted, then open the [frontend](http://localhost:3000). There is no default administrator or password. The [backend API](http://localhost:8080) requires administrator authentication for management operations.
+
+Existing installations should follow the [security setup and upgrade guide](docs/SECURITY_SETUP.md) before recreating their backend container. It covers database preservation, HTTPS proxy settings, and transfer limits.
 
 ---
 
@@ -115,7 +120,7 @@ docker-compose logs -f        # View logs
 - View .ZIM files (offline Wikipedia, etc.) in-browser or via Kiwix-Serve
 - Kiwix-Serve runs in Docker and is accessible at http://localhost:8081/
 - With no ZIM files, Kiwix-Serve displays an empty library. After adding `.zim` files to `storage/piles`, run `docker-compose restart kiwix-serve` to load them.
-- Share ZIM content on your local network
+- Kiwix-Serve is bound to the Docker host's loopback interface and reads its content volume without write access. It does not enforce BabylonPiles file permissions. For private ZIM content on another device, sign in, download the file through BabylonPiles, and open it locally with Kiwix.
 
 ### Backend Move API
 - Move or rename files/folders via POST `/api/v1/files/move` (used by the frontend drag-and-drop)
@@ -138,7 +143,7 @@ BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge ser
 - FastAPI backend with async SQLAlchemy
 - React frontend
 - JWT authentication
-- Modular content sources (Kiwix, HTTP, Torrent, Gutenberg)
+- Modular content sources (Kiwix, HTTP, Gutenberg); torrent imports are disabled
 - EmergencyStorage-backed mirrored sources for OpenStreetMap and Internet Archive
 - System monitoring and metrics
 - Mode switching (Learn/Store)
@@ -180,6 +185,7 @@ See [RoadMap.md](RoadMap.md) and [TODO.md](TODO.md) for details.
 ## Documentation
 
 - [Installation Guide](docs/INSTALL.md) - Complete Docker setup instructions
+- [Security Setup and Upgrades](docs/SECURITY_SETUP.md) - Administrator creation, account-state migration, HTTPS, and transfer limits
 - [Mirrored Sources Guide](docs/MIRRORING.md) - EmergencyStorage-backed mirroring, schedules, and storage layout
 - [Storage Guide](docs/STORAGE.md) - Comprehensive storage management guide including multi-location allocation
 - [Project Summary](PROJECT_SUMMARY.md) - Detailed project overview
@@ -213,7 +219,12 @@ Please check our [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development
    ```sh
    docker-compose up --build -d
    ```
-5. **Access the UI:**
+5. **Create an administrator:**
+   ```sh
+   docker compose exec backend python -m app.admin create --username admin
+   ```
+   Enter the password at the prompt.
+6. **Access the UI:**
    - Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Quick Add & Custom Content Sources
@@ -223,6 +234,6 @@ You can now add custom content repositories directly from the frontend interface
 - Enter a repository URL (required)
 - Optionally provide an Info URL for file metadata
 
-If you do not provide an Info URL, file info (the 'i' button) will not be available for files from that source. The backend will store your custom source in `sources.json` automatically.
+If you do not provide an Info URL, file info (the 'i' button) will not be available for files from that source. The backend stores custom sources in its persistent state volume.
 
 For API users, you can add or update sources using the `/api/v1/piles/add-source` endpoint. See [API.md](docs/API.md) for details.

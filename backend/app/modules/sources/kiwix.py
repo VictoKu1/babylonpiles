@@ -2,34 +2,31 @@
 Kiwix source handler for downloading ZIM files
 """
 
-import asyncio
 import logging
 import os
-import aiohttp
-import aiofiles
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Callable
-from urllib.parse import urljoin, urlparse
-import json
+from urllib.parse import urljoin
 
 from app.core.config import settings
+from app.core.paths import resolve_path, validate_name
+from app.core.public_http import PublicSession
+from app.modules.sources.http import HTTPSource
 from app.models.pile import Pile
 from app.models.update_log import UpdateLog
 
 logger = logging.getLogger(__name__)
 
-class KiwixSource:
+class KiwixSource(HTTPSource):
     """Handles downloads from Kiwix library"""
     
     def __init__(self):
+        super().__init__()
         self.base_url = settings.kiwix_library_url
-        self.session = None
     
-    async def _get_session(self) -> aiohttp.ClientSession:
+    async def _get_session(self) -> PublicSession:
         """Get or create HTTP session"""
-        if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
-        return self.session
+        return await super()._get_session()
     
     async def download(
         self, 
@@ -39,6 +36,7 @@ class KiwixSource:
     ) -> bool:
         """Download ZIM file from Kiwix"""
         try:
+            validate_name(pile.name)
             logger.info(f"Starting Kiwix download for: {pile.name}")
             
             # Get download URL
@@ -46,13 +44,9 @@ class KiwixSource:
             if not download_url:
                 raise ValueError("Could not find download URL")
             
-            # Create target directory
-            piles_dir = Path(settings.piles_dir)
-            piles_dir.mkdir(parents=True, exist_ok=True)
-            
             # Generate target filename
             filename = f"{pile.name}.zim"
-            target_path = piles_dir / filename
+            target_path = resolve_path(settings.piles_dir, filename)
             
             # Download file
             success = await self._download_file(
@@ -70,6 +64,7 @@ class KiwixSource:
                 logger.info(f"Successfully downloaded: {target_path}")
                 return True
             else:
+                update_log.error_message = self.last_error or "Kiwix download failed"
                 logger.error(f"Failed to download: {download_url}")
                 return False
                 
@@ -109,7 +104,7 @@ class KiwixSource:
             # Get content catalog
             catalog_url = urljoin(self.base_url, "/catalog/v2/entries.json")
             
-            async with session.get(catalog_url) as response:
+            async with session.get(catalog_url, max_bytes=settings.max_catalog_size) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data.get("data", [])
@@ -158,32 +153,7 @@ class KiwixSource:
         progress_callback: Optional[Callable] = None
     ) -> bool:
         """Download file with progress tracking"""
-        try:
-            session = await self._get_session()
-            
-            async with session.get(url) as response:
-                if response.status != 200:
-                    logger.error(f"Download failed: {response.status}")
-                    return False
-                
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded_size = 0
-                
-                async with aiofiles.open(target_path, 'wb') as f:
-                    async for chunk in response.content.iter_chunked(8192):
-                        await f.write(chunk)
-                        downloaded_size += len(chunk)
-                        
-                        # Update progress
-                        if total_size > 0 and progress_callback:
-                            progress = downloaded_size / total_size
-                            progress_callback(target_path.name, progress)
-                
-                return True
-                
-        except Exception as e:
-            logger.error(f"Error downloading file: {e}")
-            return False
+        return await super()._download_file(url, target_path, progress_callback)
     
     async def get_available_content(self) -> Dict[str, Any]:
         """Get available Kiwix content"""
@@ -216,4 +186,4 @@ class KiwixSource:
     async def cleanup(self):
         """Cleanup resources"""
         if self.session and not self.session.closed:
-            await self.session.close() 
+            await self.session.close()

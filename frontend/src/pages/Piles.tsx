@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { SourceInfo, SourceMetadata } from '../components/SourceInfo';
 
 interface Pile {
   id?: number;
@@ -239,7 +240,9 @@ const KiwixTreeBrowser: React.FC<{
   const [modalFiles, setModalFiles] = useState<KiwixNode[]>([]);
   const [searchText, setSearchText] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [infoModalHtml, setInfoModalHtml] = useState<string | null>(null);
+  const [infoMetadata, setInfoMetadata] = useState<SourceMetadata | null>(null);
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [infoError, setInfoError] = useState('');
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [manualModalOpen, setManualModalOpen] = useState(false);
@@ -250,7 +253,7 @@ const KiwixTreeBrowser: React.FC<{
   const [manualError, setManualError] = useState('');
 
   useEffect(() => {
-    fetch("http://localhost:8080/api/v1/piles/sources-list")
+    fetch("/api/v1/piles/sources-list")
       .then(res => res.json())
       .then(data => setSources(data));
   }, []);
@@ -264,7 +267,7 @@ const KiwixTreeBrowser: React.FC<{
   useEffect(() => {
     if (!selectedRepoUrl) return;
     setLoading(true);
-    fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(selectedRepoUrl)}&description_url=${encodeURIComponent(selectedDescUrl || '')}`)
+    fetch(`/api/v1/piles/browse-source?url=${encodeURIComponent(selectedRepoUrl)}&description_url=${encodeURIComponent(selectedDescUrl || '')}`)
       .then(res => res.json())
       .then(data => setRoot(data.items))
       .finally(() => setLoading(false));
@@ -275,7 +278,7 @@ const KiwixTreeBrowser: React.FC<{
     if (!node.is_dir || node.loaded) return;
     // Mark as loading
     updateNode({ ...node, loading: true });
-    const res = await fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
+    const res = await fetch(`/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
     const data = await res.json();
     node.children = data.items;
     node.loaded = true;
@@ -300,7 +303,7 @@ const KiwixTreeBrowser: React.FC<{
 
   const loadChildren = async (node: KiwixNode) => {
     setLoadingFolders(prev => ({ ...prev, [node.url]: true }));
-    const res = await fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
+    const res = await fetch(`/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
     const data = await res.json();
     node.children = data.items;
     node.loaded = true;
@@ -491,45 +494,19 @@ const KiwixTreeBrowser: React.FC<{
     if (!selectedDescUrl) return;
     const baseFilename = getBaseFilename(filename);
     setInfoModalTitle(filename);
-    setInfoModalHtml('<div>Loading...</div>');
+    setInfoMetadata(null);
+    setInfoError('');
+    setInfoLoading(true);
     setInfoModalOpen(true);
-    const url = `http://localhost:8080/api/v1/piles/file-info?filename=${encodeURIComponent(baseFilename)}&description_url=${encodeURIComponent(selectedDescUrl)}`;
+    const url = `/api/v1/piles/file-info?filename=${encodeURIComponent(baseFilename)}&description_url=${encodeURIComponent(selectedDescUrl)}`;
     try {
       const resp = await fetch(url);
-      const html = await resp.text();
-      let infoFields = null;
-      try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const book = doc.querySelector('book');
-        if (book) {
-          infoFields = {
-            title: book.getAttribute('title') || '',
-            description: book.getAttribute('description') || '',
-            language: book.getAttribute('language') || '',
-            creator: book.getAttribute('creator') || '',
-            publisher: book.getAttribute('publisher') || '',
-          };
-        }
-      } catch (e) {
-        // Parsing failed, infoFields remains null
-      }
-      // Only set the modal content after loading is done
-      if (infoFields) {
-        setInfoModalHtml(`
-          <div style='line-height:1.7'>
-            <div><b>Title:</b> ${infoFields.title}</div>
-            <div><b>Description:</b> ${infoFields.description}</div>
-            <div><b>Language:</b> ${infoFields.language}</div>
-            <div><b>Creator:</b> ${infoFields.creator}</div>
-            <div><b>Publisher:</b> ${infoFields.publisher}</div>
-          </div>
-        `);
-      } else {
-        setInfoModalHtml(`<div style='color:red'>No info found or failed to render info.</div>`);
-      }
+      if (!resp.ok) throw new Error('Unable to load source information.');
+      setInfoMetadata(await resp.json());
     } catch (e) {
-      setInfoModalHtml(`<div style='color:red'>No info found or failed to render info.</div>`);
+      setInfoError('Unable to load source information.');
+    } finally {
+      setInfoLoading(false);
     }
   }
 
@@ -650,7 +627,7 @@ const KiwixTreeBrowser: React.FC<{
               <span style={{ fontWeight: 600, fontSize: 18 }}>{infoModalTitle}</span>
               <button onClick={() => setInfoModalOpen(false)} style={{ fontSize: 20, background: 'none', border: 'none', cursor: 'pointer' }}>✖️</button>
             </div>
-            {infoModalHtml === '<div>Loading...</div>' ? (
+            {infoLoading ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 40 }}>
                 <span style={{ display: 'inline-block', width: 24, height: 24 }}>
                   <svg style={{ display: 'block' }} width="24" height="24" viewBox="0 0 50 50">
@@ -662,7 +639,7 @@ const KiwixTreeBrowser: React.FC<{
                 <span>Loading...</span>
               </div>
             ) : (
-              <div dangerouslySetInnerHTML={{ __html: infoModalHtml || '<div style=\'color:red\'>No info found or failed to render info.</div>' }} />
+              infoError ? <p role="alert" className="text-red-700">{infoError}</p> : <SourceInfo info={infoMetadata} />
             )}
           </div>
         </div>
@@ -690,7 +667,7 @@ const KiwixTreeBrowser: React.FC<{
                 if (!manualName || !manualRepoUrl) { setManualError('Name and Repository URL are required.'); return; }
                 setManualError('');
                 // POST to backend
-                const resp = await fetch('http://localhost:8080/api/v1/piles/add-source', {
+                const resp = await fetch('/api/v1/piles/add-source', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ name: manualName, repo_url: manualRepoUrl, info_url: manualNoInfo ? null : manualInfoUrl })
@@ -749,7 +726,7 @@ export function Piles() {
       formData.append("url", newPile.source_url);
 
       const validationResponse = await fetch(
-        "http://localhost:8080/api/v1/piles/validate-url",
+        "/api/v1/piles/validate-url",
         {
           method: "POST",
           body: formData,
@@ -785,7 +762,7 @@ export function Piles() {
     }
 
     try {
-      const response = await fetch("http://localhost:8080/api/v1/piles/", {
+      const response = await fetch("/api/v1/piles/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -832,7 +809,7 @@ export function Piles() {
       formData.append("url", source.source_url);
 
       const validationResponse = await fetch(
-        "http://localhost:8080/api/v1/piles/validate-url",
+        "/api/v1/piles/validate-url",
         {
           method: "POST",
           body: formData,
@@ -878,7 +855,7 @@ export function Piles() {
         tags: source.tags,
       };
 
-      const response = await fetch("http://localhost:8080/api/v1/piles/", {
+      const response = await fetch("/api/v1/piles/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -911,7 +888,7 @@ export function Piles() {
   const loadPiles = async () => {
     try {
       console.log("Loading piles...");
-      const response = await fetch("http://localhost:8080/api/v1/piles/");
+      const response = await fetch("/api/v1/piles/");
       if (response.ok) {
         const result = await response.json();
         console.log("Piles loaded:", result);
@@ -1019,7 +996,7 @@ export function Piles() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/piles/${pile.id}/download-source`,
+        `/api/v1/piles/${pile.id}/download-source`,
         {
           method: "POST",
           headers: {
@@ -1058,7 +1035,7 @@ export function Piles() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/piles/${pile.id}`,
+        `/api/v1/piles/${pile.id}`,
         {
           method: "DELETE",
           headers: {
@@ -1097,7 +1074,7 @@ export function Piles() {
       formData.append("url", url);
 
       const response = await fetch(
-        "http://localhost:8080/api/v1/piles/validate-url",
+        "/api/v1/piles/validate-url",
         {
           method: "POST",
           body: formData,
@@ -1141,7 +1118,7 @@ export function Piles() {
     setGutenbergResults([]);
     try {
       const resp = await fetch(
-        `http://localhost:8080/api/v1/piles/gutenberg-search?query=${encodeURIComponent(
+        `/api/v1/piles/gutenberg-search?query=${encodeURIComponent(
           gutenbergQuery
         )}`
       );
@@ -1169,7 +1146,7 @@ export function Piles() {
       tags: book.subjects?.slice(0, 5) || [],
     };
     try {
-      const response = await fetch("http://localhost:8080/api/v1/piles/", {
+      const response = await fetch("/api/v1/piles/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(pileData),
@@ -1222,7 +1199,7 @@ export function Piles() {
                 source_url: file.url,
                 tags: ["kiwix", "zim"],
               };
-              await fetch("http://localhost:8080/api/v1/piles/", {
+              await fetch("/api/v1/piles/", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(pileData),

@@ -23,7 +23,7 @@ export function Sidebar() {
       let build = "2024.01.15";
       try {
         // Try to get git info from backend
-        const gitResp = await fetch('http://localhost:8080/api/v1/system/gitinfo');
+        const gitResp = await fetch('/api/v1/system/gitinfo');
         if (gitResp.ok) {
           const gitData = await gitResp.json();
           if (gitData.version) version = gitData.version;
@@ -33,7 +33,7 @@ export function Sidebar() {
         // Ignore, fallback to defaults
       }
       try {
-        const response = await fetch('http://localhost:8080/api/v1/system/status');
+        const response = await fetch('/api/v1/system/status');
         if (response.ok) {
           const data = await response.json();
           setSystemInfo({
