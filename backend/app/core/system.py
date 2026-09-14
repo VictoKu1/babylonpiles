@@ -6,6 +6,7 @@ import asyncio
 import logging
 import psutil
 import os
+import stat
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -14,6 +15,25 @@ from app.core.database import AsyncSessionLocal
 from app.models.system_status import SystemStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _content_bytes(root: Path, seen: set) -> int:
+    """Count regular files once across content roots, without following links."""
+    if root.is_symlink():
+        return 0
+    total = 0
+    for directory, _, filenames in os.walk(root, followlinks=False):
+        for filename in filenames:
+            try:
+                info = (Path(directory) / filename).lstat()
+            except OSError:
+                # A download may be removed while storage is being measured.
+                continue
+            identity = (info.st_dev, info.st_ino)
+            if stat.S_ISREG(info.st_mode) and identity not in seen:
+                seen.add(identity)
+                total += info.st_size
+    return total
 
 
 class SystemManager:
@@ -285,13 +305,17 @@ class SystemManager:
         try:
             storage_info = await self._get_storage_info()
 
-            # Get directory sizes
-            piles_dir = Path(settings.piles_dir)
-            if piles_dir.exists():
-                piles_size = sum(
-                    f.stat().st_size for f in piles_dir.rglob("*") if f.is_file()
-                )
-                storage_info["piles_size_bytes"] = piles_size
+            # The dashboard needs one total for files and downloaded piles.
+            # Shared roots, nested directories and hard links must not add twice.
+            seen = set()
+            piles_size = await asyncio.to_thread(
+                _content_bytes, Path(settings.piles_dir), seen
+            )
+            data_size = await asyncio.to_thread(
+                _content_bytes, Path(settings.data_dir), seen
+            )
+            storage_info["piles_size_bytes"] = piles_size
+            storage_info["content_size_bytes"] = piles_size + data_size
 
             return storage_info
         except Exception as e:

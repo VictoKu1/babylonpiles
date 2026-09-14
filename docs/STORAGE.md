@@ -1,129 +1,68 @@
 # Storage
 
-## Scope
+BabylonPiles has separate backend content stores and a chunk-storage service. Adding storage-service drives does not move the backend's existing files, piles, database, or mirror jobs.
 
-BabylonPiles has two storage-related layers:
-- `storage/storage_service.py` runs the drive, chunk, allocation, and migration service directly.
-- The backend exposes file, pile, and system routes under `/api/v1/storage`, `/api/v1/files`, `/api/v1/piles`, and `/api/v1/system`.
-- Mirrored sources write into the shared piles volume through the internal `mirrorer` service while job state stays in the backend database.
+## Default Compose locations
 
-## Storage Service
+| Resource | Container path | Persistent source | Consumers |
+| --- | --- | --- | --- |
+| File-browser content and file permissions | `/mnt/babylonpiles/data` (`DATA_DIR`) | `babylonpiles_data` named volume | Backend |
+| Piles and mirrored datasets | `/mnt/babylonpiles/piles` (`PILES_DIR`) | Host `storage/piles` | Backend and mirrorer; Kiwix reads the host directory at `/data` |
+| Mirror run logs | `/mnt/babylonpiles/data/mirror_logs` | `babylonpiles_data` named volume | Backend and mirrorer |
+| Accounts, jobs, signing key, source catalog | `/app/state` (`STATE_DIR`) | `backend_state` named volume | Backend |
+| Internal service credential | `/run/babylonpiles/secrets` | `service_secrets` named volume | Backend, storage, mirrorer |
+| Storage-service drive 1 | `/mnt/hdd1` | Host `storage/info` | Storage |
+| Chunk allocation/migration metadata | `/app/data/metadata` | `storage_data` named volume | Storage |
 
-`storage/storage_service.py` manages:
-- Drive discovery and status.
-- File allocation across drives by chunk.
-- Chunk migration between drives.
-- Persistent metadata stored under `/app/data/metadata`.
+Compose normally prefixes named volumes with the project name. Preserve both content and metadata when backing up or relocating a deployment. `docker compose down` keeps named volumes; deleting volumes discards their state. See [Security setup and upgrades](SECURITY_SETUP.md) before replacing an older backend whose database was kept inside its container.
 
-Direct storage service routes:
-- `GET /health`
-- `GET /drives`
-- `POST /drives/scan`
-- `GET /drives/{drive_id}`
-- `POST /allocate`
-- `GET /chunks`
-- `GET /chunks/{chunk_id}`
-- `POST /migrate`
-- `GET /migrations`
-- `GET /migrations/{migration_id}`
-- `GET /status`
-- `GET /files/{file_id}`
-- `DELETE /files/{file_id}`
+## File browser, piles, and mirrors
 
-`backend/app/core/storage_client.py` is the async client used by the backend storage API to call those routes.
+The file browser lists `DATA_DIR`. Its `.permissions.json` and `.metadata.json` files belong to that directory. Administrators can upload, create folders, move/delete files, preview/download supported files, and explicitly share files through the dedicated public routes. A file's public permission identifies the exact approved file; replacing or moving it requires sharing it again.
 
-## File Browser
+Standard pile downloads use `PILES_DIR`; direct torrent imports are disabled. HTTP, Kiwix, and Gutenberg source retrieval uses the configured transfer limits. Piles are managed from the Piles page and `/api/v1/piles`.
 
-`backend/app/api/v1/endpoints/files.py` and `frontend/src/pages/Browse.tsx` implement the file browser.
+Mirror files use `PILES_DIR/mirrors/<provider>/<variant>/`, and the vendored scripts may add another dataset directory below that. With the default separate roots, these files **do not appear in the file browser rooted at `DATA_DIR`**. Access mirror files through the mounted host `storage/piles/mirrors` directory. See [Mirroring](MIRRORING.md) for the current provider outputs and limitations.
 
-Implemented browser features:
-- List files and folders under `/mnt/babylonpiles/data`.
-- Upload files and create folders.
-- Move and delete items.
-- Download files with `GET /api/v1/files/download?path=...`.
-- View file information with `GET /api/v1/files/view/{file_path}`.
-- Preview supported file types with `GET /api/v1/files/preview/{file_path}`.
-- Open ZIM files with `GET /api/v1/files/zim-viewer/{file_path}`.
-- Toggle public/private access with `GET /api/v1/files/permission/{file_path}` and `POST /api/v1/files/permission/{file_path}/toggle`.
-- Fetch detailed metadata with `GET /api/v1/files/metadata/{file_path}`.
-- Show active downloads with `GET /api/v1/files/download-status`.
+Kiwix reads top-level `.zim` files in host `storage/piles` and listens on the Docker host at `127.0.0.1:8081`. Restart Kiwix after adding a ZIM. Its reader does not implement BabylonPiles permissions; keep private content behind the authenticated application or open a downloaded copy locally.
 
-The browser stores permissions in `.permissions.json` and metadata in `.metadata.json` under `/mnt/babylonpiles/data`.
+## Dashboard storage figures
 
-Mirrored datasets also appear in this browser because they are stored under `/mnt/babylonpiles/piles/mirrors/...`.
+The dashboard reads `/api/v1/system/storage`. `content_size_bytes` counts file bytes across `DATA_DIR` and `PILES_DIR`, counting shared files once. Capacity and available space come from the filesystem containing `DATA_DIR`; they do not combine the capacities of the pile mount and storage-service drives. If `DATA_DIR` is absent, empty, or contains only hidden entries, the current API reports zero capacity and available space.
 
-## Piles
+Use the authenticated `/api/v1/storage/drives` API or the helper's `status` command to inspect chunk-storage drives. Adding those drives does not increase the dashboard's backend-content capacity.
 
-`frontend/src/pages/Piles.tsx` manages pile creation and downloads.
+## Add or detach chunk-storage drives
 
-Implemented pile behaviors:
-- Add piles with `source_type` values of `kiwix`, `http`, `torrent`, or `gutenberg`.
-- Validate source URLs before starting a download.
-- Start a download with `POST /api/v1/piles/{pile_id}/download-source`.
-- Show downloaded, downloading, and pending piles.
-- Show download progress from `file_path`, `file_size`, `is_downloading`, and `download_progress`.
-- Update `download_progress` every 512 KB during HTTP downloads.
-- Use a 1 hour `aiohttp.ClientTimeout(total=3600)` for HTTP downloads.
-- Show Project Gutenberg search results through `GET /api/v1/piles/gutenberg-search`.
+The storage service discovers configured `/mnt/hddN` paths, allocates chunks, and exposes migration/status endpoints through the administrator-only backend `/api/v1/storage` routes. It is internal to the Compose network and has no published host port. Direct internal requests require the shared service credential.
 
-The backend prevents starting a second download while a pile is already downloading.
+For manual setup, mount a disk through the host operating system, create a dedicated directory, add a bind to the storage service, and set `MAX_DRIVES` to the highest configured drive number. Validate the Compose document and recreate storage to apply mount/environment changes. Keep the storage metadata and credential mounts. The complete example is in [Installation](INSTALL.md).
 
-## Mirrored Sources
+On Unix, the optional operator helper provides:
 
-`backend/app/api/v1/endpoints/mirrors.py`, `backend/app/core/mirror_scheduler.py`, and `mirrorer/app.py` implement mirrored-source management.
+```sh
+bash ./babylonpiles.sh add-drive
+bash ./babylonpiles.sh scan-drives
+bash ./babylonpiles.sh remove-drive
+```
 
-Implemented mirrored-source behavior:
-- Create persisted mirror jobs for fixed provider and variant pairs.
-- Schedule mirror runs with `daily`, `weekly`, or `monthly` UTC presets.
-- Trigger manual runs through `POST /api/v1/mirrors/jobs/{job_id}/run`.
-- Persist mirror run history, bytes written, and error details.
-- Tail local or proxied logs through `GET /api/v1/mirrors/runs/{run_id}/logs`.
-- Recover interrupted running jobs as failed after backend restart.
+The helper uses administrator authentication, validates a generated Compose configuration, and allocates into a `babylonpiles` child of the selected directory. It binds that real directory into storage; it does not copy the disk onto the system filesystem or recursively change its ownership. It refuses removal when allocated chunks are reported, recreates storage after a change, and checks the resulting drive list. Failed operations restore the previous configuration and report rollback failures explicitly.
 
-Mirrored content layout:
-- `/mnt/babylonpiles/piles/mirrors/openstreetmap/planet/`
-- `/mnt/babylonpiles/piles/mirrors/internet_archive/software/`
-- `/mnt/babylonpiles/piles/mirrors/internet_archive/music/`
-- `/mnt/babylonpiles/piles/mirrors/internet_archive/movies/`
-- `/mnt/babylonpiles/piles/mirrors/internet_archive/texts/`
+It keeps a small `.babylonpiles-storage.json` mapping. Subsequent commands must apply that mapping:
 
-The vendored EmergencyStorage scripts may create another dataset-specific directory inside those variant folders. The mirror adapter only passes fixed server-side command templates and does not accept arbitrary shell arguments from the frontend.
+```sh
+bash ./babylonpiles.sh compose up --build -d --wait
+bash ./babylonpiles.sh compose logs storage
+```
 
-## Hotspot And User Config
-
-`backend/app/api/v1/endpoints/system.py` exposes the hotspot and user configuration routes used by the dashboard UI:
-- `POST /api/v1/system/hotspot/start`
-- `POST /api/v1/system/hotspot/stop`
-- `GET /api/v1/system/hotspot/status`
-- `GET /api/v1/system/hotspot/requirements`
-- `GET /api/v1/system/hotspot/public-content`
-- `GET /api/v1/system/hotspot/download/{file_path}`
-- `POST /api/v1/system/hotspot/request-upload`
-- `POST /api/v1/system/hotspot/approve-request/{request_id}`
-- `POST /api/v1/system/hotspot/reject-request/{request_id}`
-- `GET /api/v1/system/user/config`
-- `POST /api/v1/system/user/config`
-
-The hotspot configuration is built around `BabylonPiles`, `babylon123`, `192.168.4.0/24`, and `192.168.4.1`, with the SSID optionally personalized from the stored user name.
-
-The hotspot requirements response also includes platform-specific installation instructions, including `brew install hostapd` and `brew install dnsmasq` for `Darwin`/macOS.
-
-`frontend/src/pages/Dashboard.tsx` wires those hotspot and user-config endpoints into the UI. `frontend/src/pages/System.tsx` is currently only a static placeholder and does not implement those controls.
+Direct `docker compose` ignores the mapping. Back up the map with the deployment configuration. Removal detaches the configured directory and preserves host files/mounts; migrate allocated chunks first and unmount with the OS only after verifying the detach. Device auto-mount is an explicit Linux operation; ordinary application startup never edits fstab or mounts drives.
 
 ## Tests
 
-The test scripts in `tests/*.py` cover the implemented behavior above:
-- `test_storage_api.py` checks the storage service through the backend API and direct service URL.
-- `test_storage_calculation.py` checks dashboard storage calculations.
-- `test_download_functionality.py` checks pile download flow, duplicate-download prevention, and download status.
-- `test_permissions.py` checks public/private file toggling.
-- `test_metadata.py` checks file and folder metadata.
-- `test_hotspot.py` checks hotspot start/stop, public content, and upload requests.
-- `test_cross_platform.py` checks hotspot requirements and platform-dependent behavior.
-- `test_user_config.py` checks user-name persistence and personalized hotspot SSIDs.
+Run installer fixtures on a Unix test host with Bash and Python 3.11 or newer. They use temporary fixtures without changing real host mounts:
 
-## What Is Not Documented Here
+```sh
+python3 -m unittest discover -s tests -p 'test_installer*.py' -v
+```
 
-The inspected code does not confirm any of the following claims, so they are intentionally omitted:
-- Automatic temporary-file cleanup behavior.
-- Torrent-specific backend implementation details.
+The older scripts in `tests/` include live API exercises; read [the test guide](../tests/README.md) and configure a disposable deployment before running them. They are not evidence that every storage or host-network feature works on the current platform.

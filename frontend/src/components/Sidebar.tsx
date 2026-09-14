@@ -10,8 +10,8 @@ interface SystemInfo {
 
 export function Sidebar() {
   const [systemInfo, setSystemInfo] = React.useState<SystemInfo>({
-    version: "1.0.0",
-    build: "2024.01.15",
+    version: "Unknown",
+    build: "Unknown",
     status: "Loading...",
     mode: "Loading..."
   });
@@ -19,8 +19,8 @@ export function Sidebar() {
 
   React.useEffect(() => {
     const fetchSystemInfo = async () => {
-      let version = "1.0.0";
-      let build = "2024.01.15";
+      let version = "Unknown";
+      let build = "Unknown";
       try {
         // Try to get git info from backend
         const gitResp = await fetch('/api/v1/system/gitinfo');
@@ -34,13 +34,14 @@ export function Sidebar() {
       }
       try {
         const response = await fetch('/api/v1/system/status');
+        if (!response.ok) throw new Error('System status unavailable');
         if (response.ok) {
           const data = await response.json();
           setSystemInfo({
             version,
             build,
-            status: data.system_status === "online" ? "Online" : "Offline",
-            mode: data.mode === "learn" ? "Learn" : "Store"
+            status: "Online",
+            mode: data.data?.current_mode === "learn" ? "Learn" : data.data?.current_mode === "store" ? "Store" : "Unknown"
           });
         }
       } catch (error) {
@@ -170,4 +171,4 @@ export function Sidebar() {
       )}
     </aside>
   )
-} 
+}

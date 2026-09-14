@@ -1,239 +1,125 @@
-# 🏛️ BabylonPiles
+# BabylonPiles
 
-> Recruiter-oriented project summary: [RECRUITER_BRIEF.md](RECRUITER_BRIEF.md)
+BabylonPiles is an offline knowledge-server prototype. Use its web interface to manage downloaded archives, books, and other files, then access stored content over your local network. Docker Compose runs the React frontend, FastAPI backend, storage service, mirroring adapter, and Kiwix reader.
 
-**Your offline, modular, open source vault of civilization's knowledge accessible anywhere, anytime, on any device.**
+## Current capabilities
 
----
+- Browse, upload, download, move, and delete files and folders; mark selected content public.
+- Create and download piles from HTTP, Kiwix, and Project Gutenberg sources. Quick Add supports repository browsing and manual source entries.
+- Configure OpenStreetMap and Internet Archive mirror jobs with UTC schedules and run logs.
+- View content totals, download status, and system metrics. The dashboard refreshes every 30 seconds.
+- Protect management operations and private files with administrator login. Public readers use the `/hotspot` page for explicitly shared content.
 
-## What is BabylonPiles?
+Initial builds and content downloads need internet access. You can read stored files over the local network without internet access. Direct torrent imports are disabled. Internet Archive mirror jobs currently generate catalogs and download instructions; they do not download entire collections.
 
-BabylonPiles is an open-source, modular, offline-first knowledge server. It lets you store, organize, and serve critical data from offline Wikipedia and medical guides to books, survival manuals, technical documentation, and more. All features are accessible via a web interface and API, and the system is designed to be cross-platform via Docker.
+The default Docker setup does not configure the host's Wi-Fi or enforce network isolation when you switch modes. See [Installation](docs/INSTALL.md) and [Mirroring](docs/MIRRORING.md) for deployment limits.
 
-**Key Features:**
-- 📚 **Modular content**: Download and update data in categories (encyclopedias, health, tech, books, videos, and more)
-- 💡 **Offline-first**: No internet required for access—ideal for emergencies, remote work, or prepping
-- 🌐 **Multiple interfaces**: Access via web browser, local network, or Wi-Fi hotspot (if supported by host)
-- 🛠️ **Admin control**: Easily add, update, or remove information through a web UI or API
-- 🔄 **Auto-updates**: Sync content from trusted sources or repositories
-- 🪞 **Mirrored sources**: Schedule OpenStreetMap and Internet Archive sync jobs through a vendored EmergencyStorage adapter
-- 👥 **Multi-user**: Share your knowledge base with family, teams, classrooms, or communities
-- 🕹️ **Open & extensible**: Build plugins for new content categories or automate your own data fetchers
-- 🖱️ **Drag-and-drop file management**: Move files and folders in the web UI with native drag-and-drop
-- 📁 **Parent folder navigation**: Move files up a level using the '..' entry in every folder
-- 🗂️ **Kiwix-Serve integration**: Serve and browse .ZIM files (offline Wikipedia, etc.) over your network
-- 📤 **Seamless file uploads**: Drag files directly from desktop to browser for instant upload
-- 📊 **Accurate storage metrics**: Dashboard shows actual content storage vs system disk usage
-- 🔐 **Enhanced permissions**: Improved file permission management with better error handling
-- 🧪 **Comprehensive testing**: Organized test suite with automated test runner
+## Docker quick start
 
----
-
-## 🚀 Docker Quick Start
-
-**BabylonPiles is a Docker-only application. The only supported way to run it is with Docker Compose.**
-
-### Prerequisites
-- Docker (with Docker Compose support)
+Use Docker with Linux-container support, the Compose v2 plugin (`docker compose`), and Git. Allow disk space for the images and your chosen content; large archives can require substantial additional storage.
 
 ### 1. Clone the repository
-```bash
-git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
+
+These instructions describe the `security` branch, which contains administrator authentication. The default `main` branch does not yet contain that setup.
+
+```sh
+git clone --branch security --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
 ```
 
-### 2. Manual Docker commands
-If you cloned without `--recurse-submodules`, initialize the required mirrorer dependency first:
+If you already cloned this branch without submodules, initialize the mirrorer dependency:
 
-```bash
+```sh
 git submodule update --init --recursive
 ```
 
-```bash
-docker-compose up --build -d  # Start everything
-docker-compose down           # Stop everything
-docker-compose restart        # Restart services
-docker-compose logs -f        # View logs
+Existing deployments should read [Security setup and upgrades](docs/SECURITY_SETUP.md) before recreating the backend. That guide covers preserving account data and configuring HTTPS.
+
+### 2. Start the services
+
+```sh
+docker compose up --build -d --wait
 ```
 
 ### 3. Create an administrator and sign in
 
-```bash
+**A fresh installation has no administrator account or default password.** Create the first account from a terminal on the Docker host; the browser login screen cannot create it.
+
+```sh
 docker compose exec backend python -m app.admin create --username admin
 ```
 
-Enter and confirm a password of at least 12 characters when prompted, then open the [frontend](http://localhost:3000). There is no default administrator or password. The [backend API](http://localhost:8080) requires administrator authentication for management operations.
+At `Password:`, choose a password of at least **12 characters**, then repeat it at `Confirm password:`. The terminal hides typed characters. After `Account updated successfully.`, open [localhost:3000](http://localhost:3000) and sign in as **admin** with the password you chose.
 
-Existing installations should follow the [security setup and upgrade guide](docs/SECURITY_SETUP.md) before recreating their backend container. It covers database preservation, HTTPS proxy settings, and transfer limits.
+If that account already exists, use its password or follow the [password reset instructions](docs/SECURITY_SETUP.md#reset-an-existing-administrators-password).
 
----
+### 4. Manage the services
 
-## System Requirements
+Run the command for the operation you need:
 
-- **Docker**
-- **RAM**: 2GB minimum, 4GB recommended
-- **Storage**: 10GB+ for system, additional for content
-- **Network**: Ethernet or WiFi
+| Operation | Command |
+| --- | --- |
+| View logs | `docker compose logs -f` |
+| Stop services and preserve named volumes | `docker compose down` |
+| Rebuild and apply application changes | `docker compose up --build -d --wait` |
+| Rebuild the frontend after dependency changes | `docker compose up --build -d --no-deps --renew-anon-volumes frontend` |
 
----
+The frontend keeps dependencies in an anonymous volume, so an image rebuild alone can retain an old `node_modules`. Do not add `--volumes` to `docker compose down` unless you intend to delete named-volume data.
 
-## Usage Highlights
+On Unix, the optional `bash ./babylonpiles.sh` helper can manage Compose and dedicated host storage directories. After saving a storage mapping with the helper, use `bash ./babylonpiles.sh compose ...` for subsequent Compose commands so those mounts remain configured. See [Installation](docs/INSTALL.md).
 
-### File Browser
-- Browse, upload, download, and delete files and folders from the web UI
-- **Drag and drop** files/folders onto folders or the '..' entry to move them
-- **Seamless desktop uploads**: Drag files directly from your desktop to the browser window for instant upload
-- '..' entry lets you move items up to the parent folder
-- All file operations are reflected instantly in the UI
-- **Visual upload feedback** with progress indicators and overlays
+## Using the application
 
-### Storage Management
-- **Multi-location storage allocation** during system startup
-- **Browse storage locations** with file system navigation
-- **Storage analysis** with detailed space usage and drive information
-- **Connect/Disconnect drives** to add or remove storage from the system
-- **Reallocate storage** with data migration between drives
-- **Real-time progress tracking** during data transfers
-- **Automatic validation** of storage space requirements
-- **Safe reallocation** that prevents data loss during transfers
+### Files and piles
 
-### Dashboard & Analytics
-- **Accurate storage metrics**: Dashboard shows actual content storage instead of system disk usage
-- **Real-time updates**: Storage information updates immediately after file operations
-- **Content vs System storage**: Clear distinction between user content and system storage
-- **Visual progress indicators**: Upload and download progress tracking
-- **System health monitoring**: CPU, memory, and disk usage monitoring
+The file browser supports file uploads, directory creation, downloads, previews for supported formats, and public/private sharing. Drag files or folders onto a folder or the `..` entry to move them. Drop files from your desktop into the browser to upload them.
 
-### Quick Add & Pile Management
-- Add new content sources (piles) manually or with one click from popular repositories
-- Validate URLs before adding
-- Download and delete piles with progress tracking
+On the Piles page, add a source manually or use Quick Add to browse repositories. `Manual Entry...` accepts a source name, repository URL, and optional Info URL. The backend saves custom sources in the persistent state volume. An omitted Info URL disables that source's metadata-info button.
 
-### Mirrored Sources
-- Configure EmergencyStorage-backed mirror jobs from the `Updates` page
-- Supported mirrored datasets: OpenStreetMap planet and Internet Archive `software`, `music`, `movies`, and `texts`
-- Schedule mirrored syncs in UTC with daily, weekly, or monthly presets
-- Browse mirrored files in the normal file browser under `mirrors/<provider>/<variant>/`
-- View recent run status, bytes written, and log excerpts from the UI
+### Storage and dashboard
 
-### ZIM File Viewing & Kiwix-Serve
-- View .ZIM files (offline Wikipedia, etc.) in-browser or via Kiwix-Serve
-- Kiwix-Serve runs in Docker and is accessible at http://localhost:8081/
-- With no ZIM files, Kiwix-Serve displays an empty library. After adding `.zim` files to `storage/piles`, run `docker-compose restart kiwix-serve` to load them.
-- Kiwix-Serve is bound to the Docker host's loopback interface and reads its content volume without write access. It does not enforce BabylonPiles file permissions. For private ZIM content on another device, sign in, download the file through BabylonPiles, and open it locally with Kiwix.
+The dashboard reports bytes in the configured content and piles directories, counting overlapping files once. It refreshes every 30 seconds; it does not update instantly in response to operations on another page. System metrics describe the environment visible inside the backend container.
 
-### Backend Move API
-- Move or rename files/folders via POST `/api/v1/files/move` (used by the frontend drag-and-drop)
+Chunk-storage drives use separate locations from the browser's content root. Adding a chunk-storage drive does not move existing browser files or expand the dashboard's content filesystem. Dashboard capacity has limitations for empty content roots and separate filesystems; see [Storage](docs/STORAGE.md) for the volume map, measurements, migration, and backups.
 
-### Testing
-- Comprehensive test suite for all functionality
-- Run individual tests: `python tests/test_storage_api.py`
-- Run all tests: `python tests/run_all_tests.py`
-- Test categories: API, System, and Functionality tests
-- See [Test Suite Documentation](tests/README.md) for detailed information
+### Mirrored sources
 
----
+Use the Updates page to create and run mirror jobs. Supported variants are the OpenStreetMap planet file and Internet Archive `software`, `music`, `movies`, and `texts`.
 
-## Project Status & Roadmap
+Schedules use UTC daily, weekly, or monthly presets. Mirror output goes to host `storage/piles/mirrors/<provider>/<variant>/` in the default Compose setup. The file browser uses a separate root. Review [Mirroring](docs/MIRRORING.md) for actual outputs and space requirements before starting a job.
 
-BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge server. All future development will focus on Docker-based deployment and features accessible via the web UI and API.
+### ZIM files and Kiwix
 
-### Completed
-- Docker Compose as the only supported deployment method
-- FastAPI backend with async SQLAlchemy
-- React frontend
-- JWT authentication
-- Modular content sources (Kiwix, HTTP, Gutenberg); torrent imports are disabled
-- EmergencyStorage-backed mirrored sources for OpenStreetMap and Internet Archive
-- System monitoring and metrics
-- Mode switching (Learn/Store)
-- Pile management (CRUD)
-- Content update system
-- Security best practices (JWT, password hashing, etc.)
-- Docker-only, OS-agnostic documentation
-- CONTRIBUTING.md and code style guidelines
-- **Drag-and-drop file move and parent folder navigation**
-- **Kiwix-Serve integration for .ZIM files**
-- **Backend move API**
-- **Seamless drag and drop file uploads from desktop**
-- **Accurate dashboard storage metrics (content vs system storage)**
-- **Enhanced file permission management with improved error handling**
-- **Real-time storage updates and visual feedback**
-- **Comprehensive test suite organization and documentation**
-- **EmergencyStorage-backed mirroring subsystem with scheduled sync and run history**
+Kiwix-Serve reads top-level `.zim` files in host `storage/piles` and binds to [localhost:8081](http://localhost:8081) on the Docker host. With no archives, it serves an empty library. After adding an archive, restart it:
 
-### In Progress / Planned
-- Streamline Docker images for size and performance
-- Automated Docker image builds and releases (CI/CD)
-- User roles and permissions
-- Content indexing and search
-- Admin portal for uploading, updating, deleting modules
-- Responsive web interface
-- Comprehensive API documentation
-- More content sources (CD3WD, RSS, and custom source plugins)
-- Content versioning and rollback
-- Content discovery and recommendations
-- Automated tests (unit, integration)
-- Vulnerability scanning in Docker images
-- Community chat (Discord/Matrix)
-- More example content piles
+```sh
+docker compose restart kiwix-serve
+```
 
-See [RoadMap.md](RoadMap.md) and [TODO.md](TODO.md) for details.
+Use the helper's Compose wrapper for this command if you configured managed storage. Kiwix reads the archive mount without write access and does not enforce BabylonPiles file permissions. It is not exposed to other LAN devices by default. For private ZIM content on another device, sign in to BabylonPiles, download the file, and open it with a local Kiwix reader.
 
----
+## Development and project status
+
+See [Contributing](CONTRIBUTING.md) for source changes and frontend checks, and [tests/README.md](tests/README.md) for isolated backend, frontend, installer, and Docker integration checks. Older live-server test scripts assume anonymous administration and are not the supported validation path.
+
+[RoadMap.md](RoadMap.md) distinguishes implemented features from planned work. [TODO.md](TODO.md) tracks remaining tasks. Planned work includes content indexing, a user-management interface, host-network integration, and continuous integration.
 
 ## Documentation
 
-- [Installation Guide](docs/INSTALL.md) - Complete Docker setup instructions
-- [Security Setup and Upgrades](docs/SECURITY_SETUP.md) - Administrator creation, account-state migration, HTTPS, and transfer limits
-- [Mirrored Sources Guide](docs/MIRRORING.md) - EmergencyStorage-backed mirroring, schedules, and storage layout
-- [Storage Guide](docs/STORAGE.md) - Comprehensive storage management guide including multi-location allocation
-- [Project Summary](PROJECT_SUMMARY.md) - Detailed project overview
-- [TODO List](TODO.md) - Development roadmap and priorities
-- [API Documentation](docs/API.md) - Backend API reference
-- [Test Suite](tests/README.md) - Comprehensive test documentation and execution guide
-
----
+- [Installation](docs/INSTALL.md): Docker setup and troubleshooting
+- [Security setup and upgrades](docs/SECURITY_SETUP.md): administrator accounts, persistent state, HTTPS, and transfer limits
+- [Storage](docs/STORAGE.md): volumes, drive management, and backups
+- [Mirroring](docs/MIRRORING.md): providers, schedules, and output
+- [API reference](docs/API.md): authentication, endpoints, and request examples
+- [Project summary](PROJECT_SUMMARY.md): components and implementation limits
+- [Test suite](tests/README.md): checks and execution instructions
+- [Security policy](SECURITY.md): vulnerability reporting
+- [Publication privacy checks](docs/PRIVACY.md): local-file exclusions and commit/push checks
 
 ## License
 
-Open source under the [License](LICENSE)
-
----
+See the [GNU General Public License v3 text](LICENSE).
 
 ## Contributing
 
-**We welcome contributions!**
-Please check our [CONTRIBUTING.md](CONTRIBUTING.md) for Docker-based development instructions.
-
----
-
-> *Build your own library of civilization—offline, open, forever.*
-
-## Quick Start
-
-1. **Install Docker and Docker Compose**
-2. **Clone this repository with submodules**
-3. **Enter repository**
-4. **Start the services:**
-   ```sh
-   docker-compose up --build -d
-   ```
-5. **Create an administrator:**
-   ```sh
-   docker compose exec backend python -m app.admin create --username admin
-   ```
-   Enter the password at the prompt.
-6. **Access the UI:**
-   - Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## Quick Add & Custom Content Sources
-
-You can now add custom content repositories directly from the frontend interface using the 'Manual Entry...' option in the repository dropdown. This allows you to:
-- Enter a repository name
-- Enter a repository URL (required)
-- Optionally provide an Info URL for file metadata
-
-If you do not provide an Info URL, file info (the 'i' button) will not be available for files from that source. The backend stores custom sources in its persistent state volume.
-
-For API users, you can add or update sources using the `/api/v1/piles/add-source` endpoint. See [API.md](docs/API.md) for details.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for development and contribution instructions.

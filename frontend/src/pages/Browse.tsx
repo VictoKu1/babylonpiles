@@ -27,7 +27,6 @@ interface DownloadStatus {
 export default function Browse() {
   const [path, setPath] = useState<string>('');
   const [items, setItems] = useState<FileItem[]>([]);
-  const [history, setHistory] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
@@ -89,7 +88,6 @@ export default function Browse() {
 
   useEffect(() => {
     fetchFiles('');
-    setHistory(['']);
     fetchDownloadStatus();
   }, []);
 
@@ -101,7 +99,6 @@ export default function Browse() {
 
   const goTo = (newPath: string) => {
     fetchFiles(newPath);
-    setHistory((h) => [...h, newPath]);
   };
 
   const goUp = () => {
@@ -110,7 +107,6 @@ export default function Browse() {
     parts.pop();
     const upPath = parts.join('/');
     fetchFiles(upPath);
-    setHistory((h) => [...h, upPath]);
   };
 
   const handleDownload = (fileName: string) => {
@@ -887,7 +883,7 @@ export default function Browse() {
                           </a>
                           <br />
                           <a
-                            href={`/api/v1/files/download/${encodeURIComponent(viewingFile.path)}`}
+                            href={`/api/v1/files/download?path=${encodeURIComponent(viewingFile.path)}`}
                             className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 inline-block"
                           >
                             Download ZIM File
@@ -898,7 +894,7 @@ export default function Browse() {
                       <div className="text-center p-8">
                         <p className="mb-4">This file type cannot be previewed in the browser.</p>
                         <a
-                          href={`/api/v1/files/download/${encodeURIComponent(viewingFile.path)}`}
+                          href={`/api/v1/files/download?path=${encodeURIComponent(viewingFile.path)}`}
                           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
                         >
                           Download File
@@ -912,7 +908,7 @@ export default function Browse() {
             
             <div className="mt-4 flex justify-end space-x-2">
               <a
-                href={`/api/v1/files/download/${encodeURIComponent(viewingFile.path)}`}
+                href={`/api/v1/files/download?path=${encodeURIComponent(viewingFile.path)}`}
                 className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
               >
                 Download

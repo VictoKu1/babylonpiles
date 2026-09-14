@@ -19,6 +19,9 @@ interface DashboardData {
   downloadedPiles: number;
   downloadingPiles: number;
   storageUsed: string;
+  contentSizeBytes: number;
+  totalBytes: number;
+  availableBytes: number;
   systemStatus: string;
   lastUpdate: string;
   storageDetails: {
@@ -34,6 +37,7 @@ interface DashboardData {
     id: number;
     name: string;
     display_name: string;
+    source_type: string;
     progress: number;
   }[];
   hotspotStatus: {
@@ -70,6 +74,9 @@ export function Dashboard() {
     downloadedPiles: 0,
     downloadingPiles: 0,
     storageUsed: "0 GB",
+    contentSizeBytes: 0,
+    totalBytes: 0,
+    availableBytes: 0,
     systemStatus: "Loading...",
     lastUpdate: "Never",
     storageDetails: {
@@ -107,15 +114,15 @@ export function Dashboard() {
   const [userName, setUserName] = useState("");
   const [userNameLoading, setUserNameLoading] = useState(false);
 
-  const formatBytes = (bytes: number): string => {
+  const formatBytes = React.useCallback((bytes: number): string => {
     if (bytes === 0) return "0 B";
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
+  }, []);
 
-  const formatDate = (dateString: string): string => {
+  const formatDate = React.useCallback((dateString: string): string => {
     if (!dateString || dateString === "Never") return "Never";
     try {
       const date = new Date(dateString);
@@ -123,7 +130,7 @@ export function Dashboard() {
     } catch {
       return "Invalid Date";
     }
-  };
+  }, []);
 
   const handleStartHotspot = async () => {
     setHotspotLoading(true);
@@ -279,7 +286,7 @@ export function Dashboard() {
     return data.hotspotStatus.user_config?.user_name || "BabylonPiles";
   };
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = React.useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -341,28 +348,15 @@ export function Dashboard() {
         ? await metricsResponse.json()
         : { data: { disk: { total_bytes: 0, used_bytes: 0, free_bytes: 0 } } };
 
-      // Fetch files to calculate content storage
-      const filesResponse = await fetch("/api/v1/files?path=");
-      const filesData = filesResponse.ok
-        ? await filesResponse.json()
-        : { items: [] };
-
-      // Calculate storage used by downloaded piles
-      const downloadedPilesSize = piles
-        .filter((pile: Pile) => pile.file_path && pile.file_size)
-        .reduce(
-          (total: number, pile: Pile) => total + (pile.file_size || 0),
-          0
-        );
-
-      // Calculate content storage (files + piles)
-      const files = filesData.items || [];
-      const filesSize = files
-        .filter((file: any) => !file.is_dir && file.size)
-        .reduce((total: number, file: any) => total + (file.size || 0), 0);
-
-      // Total content storage = files + downloaded piles
-      const totalContentStorage = filesSize + downloadedPilesSize;
+      const storageResponse = await fetch('/api/v1/system/storage');
+      if (!storageResponse.ok) throw new Error('Unable to load content storage');
+      const storageData = (await storageResponse.json()).data;
+      const totalContentStorage = storageData.content_size_bytes;
+      const contentCapacity = storageData.total_bytes;
+      const contentAvailable = storageData.available_bytes;
+      if (![totalContentStorage, contentCapacity, contentAvailable].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)) {
+        throw new Error('Invalid content storage response');
+      }
 
       // Get disk usage from system metrics
       const diskInfo = metricsData.data?.disk || {};
@@ -393,6 +387,9 @@ export function Dashboard() {
         downloadedPiles,
         downloadingPiles,
         storageUsed: formatBytes(totalContentStorage), // Use content storage instead of disk usage
+        contentSizeBytes: totalContentStorage,
+        totalBytes: contentCapacity,
+        availableBytes: contentAvailable,
         systemStatus: currentMode === "learn" ? "Learn Mode" : "Store Mode",
         lastUpdate: formatDate(lastUpdate),
         storageDetails: {
@@ -425,7 +422,7 @@ export function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [formatBytes, formatDate]);
 
   useEffect(() => {
     loadDashboardData();
@@ -433,17 +430,12 @@ export function Dashboard() {
     // Refresh data every 30 seconds
     const interval = setInterval(loadDashboardData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadDashboardData]);
 
   const getStatusColor = (mode: string) => {
     return mode === "learn" ? "text-green-600" : "text-yellow-600";
   };
 
-  const getStorageColor = (percent: number) => {
-    if (percent < 50) return "text-green-600";
-    if (percent < 80) return "text-yellow-600";
-    return "text-red-600";
-  };
 
   if (loading) {
     return (
@@ -544,9 +536,9 @@ export function Dashboard() {
             {data.storageUsed}
           </p>
           <p className="text-sm text-gray-500 mt-1">
-            {data.downloadedPiles > 0 
-              ? `${data.downloadedPiles} files downloaded`
-              : "No content downloaded"
+            {data.contentSizeBytes > 0
+              ? "Stored content files"
+              : "No content stored"
             }
           </p>
         </div>
@@ -804,15 +796,15 @@ export function Dashboard() {
             <p className="text-sm text-gray-500">Content Used</p>
             <p className="text-lg font-semibold">{data.storageUsed}</p>
             <p className="text-xs text-gray-500 mt-1">
-              {data.downloadedPiles > 0 
-                ? `${data.downloadedPiles} downloaded files`
-                : "No content downloaded yet"
+              {data.contentSizeBytes > 0
+                ? "Stored content files"
+                : "No content stored yet"
               }
             </p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Available Space</p>
-            <p className="text-lg font-semibold">{data.storageDetails.free}</p>
+            <p className="text-lg font-semibold">{formatBytes(data.availableBytes)}</p>
             <p className="text-xs text-gray-500 mt-1">
               Free disk space for content
             </p>
@@ -820,12 +812,12 @@ export function Dashboard() {
         </div>
 
         {/* Content Storage Progress Bar */}
-        {data.downloadedPiles > 0 && (
+        {data.contentSizeBytes > 0 && (
           <div className="mt-4">
             <div className="flex justify-between text-sm text-gray-600 mb-1">
               <span>Content Storage</span>
               <span>
-                {data.storageUsed} of {data.storageDetails.total}
+                {data.storageUsed} of {formatBytes(data.totalBytes)}
               </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
@@ -833,8 +825,7 @@ export function Dashboard() {
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300"
                 style={{ 
                   width: `${Math.min(
-                    (parseInt(data.storageUsed.replace(/[^\d]/g, '')) / 
-                    parseInt(data.storageDetails.total.replace(/[^\d]/g, ''))) * 100, 
+                    data.totalBytes > 0 ? data.contentSizeBytes / data.totalBytes * 100 : 0,
                     100
                   )}%` 
                 }}
@@ -1007,7 +998,7 @@ export function Dashboard() {
                     {Object.entries(requirements.installation_instructions).map(([package_name, command]) => (
                       <div key={package_name}>
                         <span className="font-medium text-green-700">{package_name}:</span>
-                        <code className="block bg-green-100 p-2 rounded mt-1 text-green-900">{command}</code>
+                        <code className="block bg-green-100 p-2 rounded mt-1 text-green-900">{typeof command === 'string' ? command : ''}</code>
                       </div>
                     ))}
                   </div>

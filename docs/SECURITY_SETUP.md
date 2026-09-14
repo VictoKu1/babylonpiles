@@ -1,22 +1,48 @@
 # Security setup and upgrades
 
+This guide describes the `security` branch. The default `main` branch does not yet include its authentication and state-volume changes. Follow [Installation](INSTALL.md) for a new checkout; preserve the old database as described below before upgrading an existing one.
+
 ## First administrator
 
-Start the services with `docker compose up --build -d`, then run:
+**There is no default administrator account or password.** The login screen expects an account that already exists in the database. On a fresh installation, create that account in a terminal before signing in; the browser has no first-account setup form. Authentication protects administration and private files from unauthenticated access.
+
+Run these commands from the project folder on the computer running Docker. If you have configured storage through the Unix helper, use `bash ./babylonpiles.sh compose ...` in place of `docker compose ...` to retain its saved mapping. Start the services and wait for readiness:
+
+```sh
+docker compose up --build -d --wait
+```
+
+Then create your first administrator:
 
 ```sh
 docker compose exec backend python -m app.admin create --username admin
 ```
 
-The command prompts for a password and confirmation. Use at least 12 characters. It creates an active administrator locally; public registration cannot create an administrator. Sign in through [the frontend](http://localhost:3000). To reset an existing account's password, use `reset-password` in place of `create`. Resetting a password does not change that account's role.
+At `Password:`, enter a password of at least **12 characters**. Enter the same password at `Confirm password:`. The terminal hides your typing. When the command prints `Account updated successfully.`, open [the frontend](http://localhost:3000) and sign in with username **admin** and the password you chose. If you use a different value for `--username`, sign in with that value instead.
+
+This command creates an active administrator locally. The registration API requires an existing administrator and creates ordinary user accounts; it cannot bootstrap or create an administrator. The account persists in the state volume, so you do not need to recreate it after a normal container restart.
 
 Management APIs require an active administrator. Login accepts a JSON body, such as `{"username":"admin","password":"your password"}`, at `POST /api/v1/auth/login`; credentials in query strings are no longer accepted. The browser receives an HttpOnly, SameSite=Strict session cookie. API clients can use the returned Bearer token. Cookie-authenticated mutations must send an `Origin` matching the deployment; the frontend handles this through its same-origin API proxy.
 
-Only health checks, login, the explicitly public hotspot content/download routes, and hotspot upload-request submission are available without administrator access. An upload request is a request for review, not permission to write files.
+Public endpoints include health checks, login/logout, API documentation, and the explicitly public hotspot content/download and upload-request routes. `/api/v1/auth/me` requires an active signed-in account. Management APIs and private file access require an administrator. An upload request is a request for review, not permission to write files.
+
+The optional Unix storage helper also requires an administrator. It prompts for credentials and uses JSON login plus a Bearer header, or reads `BABYLONPILES_TOKEN` from its environment. Do not put credentials in command-line URLs. Once the helper has configured storage, use `bash ./babylonpiles.sh compose ...` for the Compose commands in this guide so its saved drive mapping remains applied. See [Installation](INSTALL.md) for details.
+
+## Reset an existing administrator's password
+
+If the creation command reports `Account already exists; use reset-password`, the username is already registered. Sign in with its existing password, or set a new password for your administrator:
+
+```sh
+docker compose exec backend python -m app.admin reset-password --username admin
+```
+
+Enter and confirm a new password of at least 12 characters, then sign in as **admin** with that password. Substitute your administrator's username if it differs. The reset command changes only the password; it does not grant an ordinary account administrator access or reactivate a disabled account. If the existing username belongs to an ordinary account, create the administrator with an unused username instead.
+
+If Docker reports that the backend service is not running, start it with the Compose command above and check `docker compose logs --tail=50 backend` if startup fails. Keep the state volume when troubleshooting so account data remains available.
 
 ## Persistent state and service credentials
 
-Compose keeps the account database, JWT signing key, and source catalog in `backend_state`, mounted at `/app/state`. Storage and mirrorer requests require a shared credential generated on first startup in `service_secrets`, mounted at `/run/babylonpiles/secrets` in all three services. These mounts are writable so concurrent first startup can initialize the credential safely. Keep both volumes when recreating containers, and include them in protected backups.
+Compose keeps the account database, JWT signing key, and source catalog in `backend_state`, mounted at `/app/state`. Storage and mirrorer management requests require a shared credential generated on first startup in `service_secrets`, mounted at `/run/babylonpiles/secrets` in all three services. These mounts are writable so concurrent first startup can initialize the credential safely. Keep both volumes when recreating containers, and include them in protected backups.
 
 The backend root filesystem is read-only. Content volumes remain writable; `/tmp` is temporary storage. The storage service has no published host port. Access it through the authenticated backend API.
 
@@ -64,7 +90,7 @@ These optional `.env` settings are byte counts:
 | `MAX_FILE_SIZE` | 1073741824 (1 GiB) | Backend source downloads and storage allocations |
 | `MAX_CATALOG_SIZE` | 8388608 (8 MiB) | Downloaded source/catalog metadata |
 
-Increase limits deliberately for larger archives, with sufficient free disk space, then recreate the affected services. Limits are enforced during transfer, including responses without a trustworthy Content-Length. Direct torrent imports are disabled because torrent peers and paths cannot yet be constrained by the download policy. Download through a trusted local client and upload the resulting files instead.
+Increase limits for larger archives only with sufficient free disk space, then recreate the affected services. The backend enforces download limits during transfer, including responses without a trustworthy Content-Length. These settings do not limit downloads performed by the vendored mirror scripts; see [Mirroring](MIRRORING.md). Direct torrent imports are disabled because torrent peers and paths cannot yet be constrained by the download policy. Download through a trusted local client and upload the resulting files instead.
 
 Kiwix-Serve listens only on `127.0.0.1:8081` on the Docker host and mounts its ZIM content read-only. It does not enforce BabylonPiles permissions, so do not republish that port as a private-content gateway. On another device, authenticate to BabylonPiles, download a private ZIM file, and open it locally with Kiwix. Explicit public hotspot files remain available through the dedicated public download route.
 
