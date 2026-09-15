@@ -27,7 +27,6 @@ interface DownloadStatus {
 export default function Browse() {
   const [path, setPath] = useState<string>('');
   const [items, setItems] = useState<FileItem[]>([]);
-  const [history, setHistory] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
@@ -56,7 +55,7 @@ export default function Browse() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`http://localhost:8080/api/v1/files?path=${encodeURIComponent(newPath)}`);
+      const res = await fetch(`/api/v1/files?path=${encodeURIComponent(newPath)}`);
       if (!res.ok) throw new Error(`Error: ${res.status}`);
       const data = await res.json();
       setItems(data.items.map((item: any) => ({
@@ -77,7 +76,7 @@ export default function Browse() {
 
   const fetchDownloadStatus = async () => {
     try {
-      const res = await fetch('http://localhost:8080/api/v1/files/download-status');
+      const res = await fetch('/api/v1/files/download-status');
       if (res.ok) {
         const data = await res.json();
         setDownloadStatus(data.data || {});
@@ -89,7 +88,6 @@ export default function Browse() {
 
   useEffect(() => {
     fetchFiles('');
-    setHistory(['']);
     fetchDownloadStatus();
   }, []);
 
@@ -101,7 +99,6 @@ export default function Browse() {
 
   const goTo = (newPath: string) => {
     fetchFiles(newPath);
-    setHistory((h) => [...h, newPath]);
   };
 
   const goUp = () => {
@@ -110,12 +107,11 @@ export default function Browse() {
     parts.pop();
     const upPath = parts.join('/');
     fetchFiles(upPath);
-    setHistory((h) => [...h, upPath]);
   };
 
   const handleDownload = (fileName: string) => {
     const filePath = path ? `${path}/${fileName}` : fileName;
-    window.open(`http://localhost:8080/api/v1/files/download?path=${encodeURIComponent(filePath)}`, '_blank');
+    window.open(`/api/v1/files/download?path=${encodeURIComponent(filePath)}`, '_blank');
   };
 
   const handleUpload = async (event: React.FormEvent) => {
@@ -128,7 +124,7 @@ export default function Browse() {
     formData.append('path', path);
 
     try {
-      const res = await fetch('http://localhost:8080/api/v1/files/upload', {
+      const res = await fetch('/api/v1/files/upload', {
         method: 'POST',
         body: formData,
       });
@@ -158,7 +154,7 @@ export default function Browse() {
       formData.append('folder_name', folderName.trim());
       formData.append('path', path);
 
-      const res = await fetch('http://localhost:8080/api/v1/files/mkdir', {
+      const res = await fetch('/api/v1/files/mkdir', {
         method: 'POST',
         body: formData,
       });
@@ -184,7 +180,7 @@ export default function Browse() {
     const itemPath = path ? `${path}/${itemName}` : itemName;
     
     try {
-      const res = await fetch(`http://localhost:8080/api/v1/files/delete?path=${encodeURIComponent(itemPath)}`, {
+      const res = await fetch(`/api/v1/files/delete?path=${encodeURIComponent(itemPath)}`, {
         method: 'DELETE',
       });
 
@@ -251,7 +247,7 @@ export default function Browse() {
     
     // For other files, use the existing modal viewer
     try {
-      const response = await fetch(`http://localhost:8080/api/v1/files/view/${encodeURIComponent(file.path)}`)
+      const response = await fetch(`/api/v1/files/view/${encodeURIComponent(file.path)}`)
       
       if (response.ok) {
         const result = await response.json()
@@ -295,7 +291,7 @@ export default function Browse() {
     formData.append('src_path', src);
     formData.append('dest_path', dest);
     try {
-      const res = await fetch('http://localhost:8080/api/v1/files/move', {
+      const res = await fetch('/api/v1/files/move', {
         method: 'POST',
         body: formData,
       });
@@ -349,7 +345,7 @@ export default function Browse() {
   const handleTogglePermission = async (item: FileItem) => {
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/files/permission/${encodeURIComponent(item.path)}/toggle`,
+        `/api/v1/files/permission/${encodeURIComponent(item.path)}/toggle`,
         {
           method: "POST",
           headers: {
@@ -440,7 +436,7 @@ export default function Browse() {
     
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/files/metadata/${encodeURIComponent(item.path)}`
+        `/api/v1/files/metadata/${encodeURIComponent(item.path)}`
       );
       
       if (response.ok) {
@@ -494,7 +490,7 @@ export default function Browse() {
         formData.append('file', file as File);
         formData.append('path', path);
 
-        const res = await fetch('http://localhost:8080/api/v1/files/upload', {
+        const res = await fetch('/api/v1/files/upload', {
           method: 'POST',
           body: formData,
         });
@@ -832,7 +828,7 @@ export default function Browse() {
                   <div className="border rounded p-4">
                     {fileViewInfo.view_type === 'pdf' ? (
                       <iframe
-                        src={`http://localhost:8080/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
+                        src={`/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
                         width="100%"
                         height="600px"
                         title="PDF Viewer"
@@ -841,7 +837,7 @@ export default function Browse() {
                     ) : fileViewInfo.view_type === 'image' ? (
                       <div className="text-center">
                         <img
-                          src={`http://localhost:8080/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
+                          src={`/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
                           alt={viewingFile.name}
                           className="max-w-full max-h-96 mx-auto"
                           style={{ objectFit: 'contain' }}
@@ -849,7 +845,7 @@ export default function Browse() {
                       </div>
                     ) : fileViewInfo.view_type === 'video' ? (
                       <video
-                        src={`http://localhost:8080/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
+                        src={`/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
                         width="100%"
                         height="400px"
                         controls
@@ -858,17 +854,18 @@ export default function Browse() {
                     ) : fileViewInfo.view_type === 'audio' ? (
                       <div className="text-center">
                         <audio
-                          src={`http://localhost:8080/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
+                          src={`/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
                           controls
                           className="mx-auto"
                         />
                       </div>
                     ) : fileViewInfo.view_type === 'text' ? (
                       <iframe
-                        src={`http://localhost:8080/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
+                        src={`/api/v1/files/preview/${encodeURIComponent(viewingFile.path)}`}
                         width="100%"
                         height="500px"
                         title="Text Viewer"
+                        sandbox=""
                         className="border"
                       />
                     ) : fileViewInfo.view_type === 'zim' ? (
@@ -877,7 +874,7 @@ export default function Browse() {
                         <p className="mb-4">This is a ZIM file containing offline content.</p>
                         <div className="space-y-2">
                           <a
-                            href={`http://localhost:8080/api/v1/files/zim-viewer/${encodeURIComponent(viewingFile.path)}`}
+                            href={`/api/v1/files/zim-viewer/${encodeURIComponent(viewingFile.path)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 inline-block"
@@ -886,7 +883,7 @@ export default function Browse() {
                           </a>
                           <br />
                           <a
-                            href={`http://localhost:8080/api/v1/files/download/${encodeURIComponent(viewingFile.path)}`}
+                            href={`/api/v1/files/download?path=${encodeURIComponent(viewingFile.path)}`}
                             className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 inline-block"
                           >
                             Download ZIM File
@@ -897,7 +894,7 @@ export default function Browse() {
                       <div className="text-center p-8">
                         <p className="mb-4">This file type cannot be previewed in the browser.</p>
                         <a
-                          href={`http://localhost:8080/api/v1/files/download/${encodeURIComponent(viewingFile.path)}`}
+                          href={`/api/v1/files/download?path=${encodeURIComponent(viewingFile.path)}`}
                           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
                         >
                           Download File
@@ -911,7 +908,7 @@ export default function Browse() {
             
             <div className="mt-4 flex justify-end space-x-2">
               <a
-                href={`http://localhost:8080/api/v1/files/download/${encodeURIComponent(viewingFile.path)}`}
+                href={`/api/v1/files/download?path=${encodeURIComponent(viewingFile.path)}`}
                 className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
               >
                 Download
@@ -1076,4 +1073,4 @@ export default function Browse() {
       )}
     </div>
   );
-} 
+}

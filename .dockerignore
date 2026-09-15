@@ -1,0 +1,46 @@
+# Storage and mirrorer use the repository root as their build context.
+# Allow only their COPY inputs; Git ignores do not protect Docker contexts.
+**
+
+!storage/
+storage/**
+!storage/requirements.txt
+!storage/storage_service.py
+
+!backend/
+backend/**
+!backend/app/
+backend/app/**
+!backend/app/core/
+backend/app/core/**
+!backend/app/core/secrets.py
+
+!mirrorer/
+mirrorer/**
+!mirrorer/requirements.txt
+!mirrorer/app.py
+
+!vendor/
+vendor/**
+!vendor/EmergencyStorage/
+vendor/EmergencyStorage/**
+!vendor/EmergencyStorage/LICENSE
+!vendor/EmergencyStorage/requirements.txt
+!vendor/EmergencyStorage/emergency_storage.sh
+!vendor/EmergencyStorage/scripts/
+vendor/EmergencyStorage/scripts/**
+!vendor/EmergencyStorage/scripts/*.sh
+!vendor/EmergencyStorage/scripts/*.py
+!vendor/EmergencyStorage/data/
+vendor/EmergencyStorage/data/**
+!vendor/EmergencyStorage/data/Ollama.json
+!vendor/EmergencyStorage/data/auto_update_config.json
+!vendor/EmergencyStorage/data/git_repositories.json
+!vendor/EmergencyStorage/data/manual_sources.json
+!vendor/EmergencyStorage/data/mirrors/
+vendor/EmergencyStorage/data/mirrors/**
+!vendor/EmergencyStorage/data/mirrors/kiwix.json
+
+# Keep VCS metadata out even if source allowlists are expanded later.
+**/.git
+**/.git/**

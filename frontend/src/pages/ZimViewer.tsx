@@ -26,7 +26,7 @@ export function ZimViewer() {
     // Get file info
     const fetchFileInfo = async () => {
       try {
-        const response = await fetch(`http://localhost:8080/api/v1/files/view/${encodeURIComponent(filePath)}`)
+        const response = await fetch(`/api/v1/files/view/${encodeURIComponent(filePath)}`)
         
         if (response.ok) {
           const result = await response.json()
@@ -44,7 +44,7 @@ export function ZimViewer() {
     fetchFileInfo()
   }, [filePath])
 
-  const zimFileUrl = filePath ? `http://localhost:8080/api/v1/files/preview/${encodeURIComponent(filePath)}` : ''
+  const zimFileUrl = filePath ? `/api/v1/files/download?path=${encodeURIComponent(filePath)}` : ''
 
   const openWithKiwix = () => {
     // Open with local Kiwix-Serve instance
@@ -56,8 +56,8 @@ export function ZimViewer() {
 
   const openWithSystemDefault = () => {
     // Download and let the system handle it
-    const downloadUrl = `http://localhost:8080/api/v1/files/download?path=${encodeURIComponent(filePath || '')}`
-    window.open(downloadUrl, '_blank')
+    const downloadUrl = `/api/v1/files/download?path=${encodeURIComponent(filePath || '')}`
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer')
   }
 
   const openWebViewer = () => {
@@ -108,7 +108,7 @@ export function ZimViewer() {
             <div>
               <h1 className="text-lg font-semibold">{fileInfo.name}</h1>
               <p className="text-sm text-gray-600">
-                {fileInfo.size} • Web Viewer (may be slow for large files)
+                {fileInfo.size} • Open a downloaded archive in your browser
               </p>
             </div>
           </div>
@@ -123,14 +123,14 @@ export function ZimViewer() {
           </div>
         </div>
 
-        {/* ZIM Viewer */}
-        <div className="flex-1 relative">
-          <iframe
-            src={`https://kiwix.github.io/kiwix-js-windows/?zim=${encodeURIComponent(zimFileUrl)}`}
-            className="w-full h-full border-0"
-            title="ZIM File Viewer"
-            allow="fullscreen"
-          />
+        <div className="max-w-2xl mx-auto p-8 space-y-4">
+          <h2 className="text-xl font-semibold">Open a local archive with Kiwix JS</h2>
+          <ol className="list-decimal pl-6 space-y-3">
+            <li>Download the ZIM archive using the Download button above.</li>
+            <li>Open Kiwix JS and use its file picker to select the downloaded archive.</li>
+          </ol>
+          <p className="text-sm text-gray-600">The browser viewer reads the local file you select. It does not receive your BabylonPiles session or a link to your private archive.</p>
+          <a href="https://kiwix.github.io/kiwix-js-windows/" target="_blank" rel="noopener noreferrer" className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Open Kiwix JS</a>
         </div>
       </div>
     )
@@ -177,7 +177,7 @@ export function ZimViewer() {
             <div className="flex items-center justify-between">
               <div>
                                  <h3 className="font-semibold text-green-700">🚀 Fastest: Kiwix-Serve (Docker)</h3>
-                 <p className="text-sm text-gray-600">Open with local Kiwix-Serve instance running in Docker</p>
+                 <p className="text-sm text-gray-600">Open an archive already published by the operator to Kiwix-Serve on this computer.</p>
               </div>
                                <button
                    onClick={openWithKiwix}
@@ -208,8 +208,8 @@ export function ZimViewer() {
           <div className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-orange-700">🌐 Web Viewer (Slow)</h3>
-                <p className="text-sm text-gray-600">Open in browser using Kiwix-JS (may take time for large files)</p>
+                <h3 className="font-semibold text-orange-700">🌐 Browser Viewer</h3>
+                <p className="text-sm text-gray-600">Download the archive, then select it in Kiwix JS.</p>
               </div>
               <button
                 onClick={openWebViewer}
@@ -227,7 +227,7 @@ export function ZimViewer() {
                      <ul className="text-sm text-blue-700 space-y-1">
              <li>• Kiwix-Serve runs locally in Docker for fast access</li>
              <li>• Large ZIM files work perfectly with Kiwix-Serve</li>
-             <li>• Accessible from any device on your network</li>
+             <li>• Kiwix-Serve is available on the server computer by default</li>
            </ul>
         </div>
 
@@ -250,4 +250,4 @@ export function ZimViewer() {
       </div>
     </div>
   )
-} 
+}

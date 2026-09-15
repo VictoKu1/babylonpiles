@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 from typing import Optional, List
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
+from app.core.secrets import load_secret
 
 
 class Settings(BaseSettings):
@@ -22,15 +23,19 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, env="PORT")
 
     # Database
-    database_url: str = Field(default="sqlite:///./babylonpiles.db", env="DATABASE_URL")
+    state_dir: str = Field(default="/app/state", env="STATE_DIR")
+    database_url: Optional[str] = Field(default=None, env="DATABASE_URL")
 
     # Security
     secret_key: str = Field(
-        default="your-secret-key-change-in-production", env="SECRET_KEY"
+        default="", env="SECRET_KEY"
     )
     access_token_expire_minutes: int = Field(
-        default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES"
+        default=30, gt=0, le=1440, env="ACCESS_TOKEN_EXPIRE_MINUTES"
     )
+    cookie_secure: bool = False
+    public_origin: Optional[str] = None
+    max_catalog_size: int = Field(default=8 * 1024 * 1024, gt=0)
 
     # Storage
     data_dir: str = Field(default="/mnt/babylonpiles/data", env="DATA_DIR")
@@ -61,10 +66,22 @@ class Settings(BaseSettings):
     )
 
     # File size limits
-    max_file_size: int = Field(default=1024 * 1024 * 1024, env="MAX_FILE_SIZE")  # 1GB
+    max_file_size: int = Field(default=1024 * 1024 * 1024, gt=0, env="MAX_FILE_SIZE")  # 1GB
     max_upload_size: int = Field(
-        default=100 * 1024 * 1024, env="MAX_UPLOAD_SIZE"
+        default=100 * 1024 * 1024, gt=0, env="MAX_UPLOAD_SIZE"
     )  # 100MB
+
+    @model_validator(mode="after")
+    def configure_security(self):
+        if self.secret_key:
+            if len(self.secret_key) < 32 or self.secret_key == "your-secret-key-change-in-production":
+                raise ValueError("SECRET_KEY must be a unique secret of at least 32 characters")
+        else:
+            self.secret_key = load_secret("SECRET_KEY", Path(self.state_dir) / "jwt.key")
+        if self.database_url is None:
+            Path(self.state_dir).mkdir(parents=True, exist_ok=True, mode=0o700)
+            self.database_url = f"sqlite:///{Path(self.state_dir) / 'babylonpiles.db'}"
+        return self
 
     class Config:
         env_file = ".env"

@@ -44,6 +44,7 @@ class User(Base):
             "email": self.email,
             "role": self.role,
             "is_active": self.is_active,
+            "is_admin": self.is_admin,
             "full_name": self.full_name,
             "avatar_url": self.avatar_url,
             "preferences": self.preferences,
@@ -55,4 +56,4 @@ class User(Base):
     @property
     def is_admin(self) -> bool:
         """Check if user is admin"""
-        return self.role == "admin" or self.is_superuser 
+        return self.role == "admin" or self.is_superuser

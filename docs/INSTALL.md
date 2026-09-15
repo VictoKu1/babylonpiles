@@ -1,453 +1,124 @@
 # Installation
 
-## Prerequisites
+Run the application with Docker Compose v2 and Linux containers. On Windows or macOS, use a Docker engine configured for Linux containers. Check `docker compose version` before starting. The optional Unix operator helper also requires Bash and Python 3.11 or newer; it does not run in native PowerShell.
 
-- Docker (with Docker Compose support)
+## First installation
 
-## Quick Start
+A fresh installation has no default administrator or password. The browser login form expects an account that already exists in the database; it cannot create the first administrator.
 
-### 1. Clone and Start
-```bash
-git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
+On the computer running Docker, open a terminal and clone the `security` branch. These instructions require its administrator setup, which is not yet on the default `main` branch. Run the setup commands from the project folder:
+
+```sh
+git clone --branch security --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
 cd babylonpiles
-docker-compose up -d
+docker compose up --build -d --wait
+docker compose exec backend python -m app.admin create --username admin
 ```
 
-For a full first-time build, prefer:
+Enter and confirm a password of at least 12 characters. The terminal hides your password input. Then open [the frontend](http://localhost:3000) and sign in with username `admin` and the password you chose. The [backend](http://localhost:8080) and [API documentation](http://localhost:8080/docs) are also available locally.
 
-```bash
-docker-compose up --build -d
+If the command reports `Account already exists`, sign in with that administrator's credentials or [reset its password](SECURITY_SETUP.md#reset-an-existing-administrators-password). A password reset does not promote an ordinary user to administrator.
+
+If you already use helper-managed storage, run Compose commands through `bash ./babylonpiles.sh compose`, as shown under [Optional Unix operator helper](#optional-unix-operator-helper).
+
+If you already cloned without submodules, run `git submodule update --init --recursive` before building. The mirrorer image requires the vendored EmergencyStorage scripts.
+
+Existing installations must follow [Security setup and upgrades](SECURITY_SETUP.md) to preserve account state before replacing an older backend. That guide also explains HTTPS and public shares.
+
+## Manage the application
+
+```sh
+docker compose logs --tail=50
+docker compose down                 # Preserve named volumes
+docker compose up --build -d --wait # Apply image/configuration changes
 ```
 
-If you cloned without `--recurse-submodules`, or before mirrored sources were added, run this before building:
+To update the checkout, pull the desired version, refresh submodules, and rebuild:
 
-```bash
-git submodule update --init --recursive
-```
-
-### 2. Access Services
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8080
-- **API Docs**: http://localhost:8080/docs
-
-The `mirrorer` service is internal-only and is started automatically by Docker Compose. It does not expose a host port by default.
-
-## Management Commands
-
-```bash
-docker-compose down           # Stop services
-docker-compose restart        # Restart services
-docker-compose logs -f        # View logs
-docker-compose up --build -d  # Rebuild and start
-```
-
-When updating the repo later, refresh the vendored EmergencyStorage submodule before rebuilding:
-
-```bash
+```sh
 git pull
 git submodule update --init --recursive
-docker-compose up --build -d
+docker compose up --build -d --wait
 ```
 
-## Mirrored Sources
+Only frontend source is bind-mounted for development. Backend, storage, and mirrorer edits require rebuilding their images; restarting an existing container does not apply new mounts or environment variables.
 
-BabylonPiles now ships with an EmergencyStorage-backed mirroring subsystem for large preserved datasets.
+After changing `frontend/package.json` or `frontend/package-lock.json`, rebuild the frontend and replace its anonymous dependency volume:
 
-Supported mirrored datasets:
-- OpenStreetMap planet
-- Internet Archive `software`
-- Internet Archive `music`
-- Internet Archive `movies`
-- Internet Archive `texts`
-
-Use the `Updates` page in the frontend to:
-- add one mirror job per provider and variant
-- enable or disable the job
-- configure daily, weekly, or monthly UTC schedules
-- run jobs manually
-- inspect recent log excerpts and latest run state
-
-Mirrored files land in the shared piles volume under:
-
-```text
-/mnt/babylonpiles/piles/mirrors/<provider>/<variant>/
+```sh
+docker compose up --build -d --no-deps --renew-anon-volumes frontend
 ```
 
-See [MIRRORING.md](MIRRORING.md) for the full feature guide.
+The existing `/app/node_modules` volume otherwise retains the previous dependencies. This command replaces only the frontend's anonymous volume; the application's named content and account volumes remain in place. Use the helper's `compose` command here too if you use managed storage.
 
-## Storage Configuration
+## Storage configuration
 
-By default, BabylonPiles uses `./storage/info` in the current directory.
+Backend content, account state, service credentials, and storage-service chunks use different locations. See [Storage](STORAGE.md) before moving or backing up any of them.
 
-To add more drives, edit `docker-compose.yml`:
+To add a drive manually, mount it with your operating system and create a dedicated `babylonpiles` directory on it. Add that directory to the existing `storage.volumes` list in `docker-compose.yml`, keeping its other volume entries:
 
-**Windows:**
 ```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default
-    - D:\:/mnt/hdd2
-    - E:\:/mnt/hdd3
-  environment:
-    - MAX_DRIVES=3  # Match number of drives
+      - type: bind
+        source: /media/external/babylonpiles
+        target: /mnt/hdd2
+        bind:
+          create_host_path: false
 ```
 
-**Linux:**
-```yaml
-storage:
-  volumes:
-    - ./storage/info:/mnt/hdd1  # Default
-    - /media/hdd1:/mnt/hdd2
-    - /mnt/storage:/mnt/hdd3
-  environment:
-    - MAX_DRIVES=3  # Match number of drives
+On Windows, use an absolute Docker-accessible path such as `D:/babylonpiles`. Set the storage service's `MAX_DRIVES` to the highest configured drive number, then validate and recreate storage:
+
+```sh
+docker compose config --quiet
+docker compose up -d --force-recreate storage
 ```
 
-Then restart: `docker-compose down && docker-compose up -d`
+Mounting a new chunk-storage location does not migrate existing backend content or database files. Preserve the original locations until a deliberate migration and readback have completed. Do not recursively change the ownership of an existing disk.
 
-## Raspberry Pi Setup
+## Optional Unix operator helper
 
-BabylonPiles is optimized for Raspberry Pi and includes WiFi hotspot functionality. Follow these steps to set up your Raspberry Pi for optimal performance.
-
-### Prerequisites
-
-1. **Raspberry Pi OS** (Raspbian) with desktop environment
-2. **WiFi adapter** (built-in or USB)
-3. **Internet connection** for initial setup
-4. **Docker and Docker Compose** installed
-
-### System Requirements Installation
-
-Install the required packages for WiFi hotspot functionality:
-
-```bash
-# Update system packages
-sudo apt update && sudo apt upgrade -y
-
-# Install required packages for WiFi hotspot
-sudo apt install -y hostapd dnsmasq iw
-
-# Install Docker (if not already installed)
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-
-# Install Docker Compose
-sudo apt install -y python3-pip
-sudo pip3 install docker-compose
-
-# Reboot to apply changes
-sudo reboot
+```sh
+bash ./babylonpiles.sh start
+bash ./babylonpiles.sh add-drive
+bash ./babylonpiles.sh scan-drives
+bash ./babylonpiles.sh remove-drive
 ```
 
-### WiFi Hotspot Configuration
+Storage administration commands prompt for an administrator username/password; the helper sends credentials in JSON and keeps them in memory. Create the first administrator before using those commands. Automation can provide `BABYLONPILES_TOKEN` through its environment. The default API is `http://127.0.0.1:8080/api/v1`; `BABYLONPILES_API_URL` can select your deployment's trusted HTTPS endpoint.
 
-After reboot, configure your WiFi interface:
+Choose an existing directory or, on Linux, a full block-device path. Content is allocated in a dedicated `babylonpiles` child directory. The helper validates effective Compose configuration before changing storage, recreates the storage service, checks its authenticated drive list, and restores the previous configuration on failure. It refuses to detach a drive with allocated chunks. Detaching preserves the disk's files and host mount; unmount through the operating system after you have verified the detach.
 
-```bash
-# Check available WiFi interfaces
-iwconfig
+The saved mapping is `.babylonpiles-storage.json` in the project root. **Once you use this mapping, run subsequent Compose commands through the helper** so it is applied to the current base configuration:
 
-# Configure WiFi interface (replace wlan0 with your interface)
-sudo nano /etc/dhcpcd.conf
-
-# Add these lines at the end:
-interface wlan0
-static ip_address=192.168.4.1/24
-nohook wpa_supplicant
+```sh
+bash ./babylonpiles.sh compose up --build -d --wait
+bash ./babylonpiles.sh compose exec backend python -m app.admin create --username admin
+bash ./babylonpiles.sh compose logs --tail=50
+bash ./babylonpiles.sh stop
 ```
 
-### Enable Required Services
+Direct `docker compose` does not read the helper's mapping. Back up that mapping alongside your deployment configuration; it contains host paths, not file contents or credentials.
 
-```bash
-# Stop services that might interfere
-sudo systemctl stop wpa_supplicant
-sudo systemctl stop dhcpcd
+For a Linux device that should mount after reboot, use `bash ./babylonpiles.sh auto-mount`. This uses its actual filesystem type and UUID, a dedicated `/media/babylonpiles/<uuid>` mountpoint, and a validated fstab entry. It preserves unrelated fstab entries and rolls back its own entry on failure. Existing conflicting mount entries must be managed through the OS. These host operations require `sudo`, `blkid`, `findmnt`, and `mount`; they are never run merely by starting the application.
 
-# Configure hostapd
-sudo nano /etc/hostapd/hostapd.conf
+## Host Wi-Fi access
 
-# Add this configuration:
-interface=wlan0
-driver=nl80211
-ssid=BabylonPiles
-hw_mode=g
-channel=6
-wmm_enabled=0
-macaddr_acl=0
-auth_algs=1
-ignore_broadcast_ssid=0
-wpa=2
-wpa_passphrase=babylon123
-wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
-rsn_pairwise=CCMP
+Keep account/content volumes on reliable storage, and allow sufficient disk space for the chosen datasets. For an ARM computer such as a Raspberry Pi, check that every image in the Compose deployment provides a compatible architecture; the repository has no separate Raspberry Pi deployment configuration.
 
-# Configure hostapd to use this file
-sudo nano /etc/default/hostapd
+Configure Wi-Fi access with the host operating system's supported hotspot tools. Clients connect to the host and open `http://<host-address>:3000`; use HTTPS if the network is not trusted. Docker application containers remain on their normal bridge network.
 
-# Add this line:
-DAEMON_CONF="/etc/hostapd/hostapd.conf"
+The default backend container cannot configure the host's Wi-Fi interface: it has neither the required hotspot utilities nor host network access. Installing packages on the host does not add them to the container. Manage the access point through the host OS; the application's hotspot controls do not provision it in this Compose deployment.
 
-# Configure dnsmasq
-sudo nano /etc/dnsmasq.conf
+## Mirrors and Kiwix
 
-# Add this configuration:
-interface=wlan0
-dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
-dhcp-option=3,192.168.4.1
-dhcp-option=6,192.168.4.1
-log-queries
-log-dhcp
+The Updates page manages supported mirror jobs, schedules, and run logs. See [Mirroring](MIRRORING.md) for actual dataset behavior and limits.
 
-# Enable services
-sudo systemctl enable hostapd
-sudo systemctl enable dnsmasq
-```
-
-### Network Configuration
-
-```bash
-# Configure network interfaces
-sudo nano /etc/network/interfaces
-
-# Add these lines:
-auto lo
-iface lo inet loopback
-
-auto eth0
-iface eth0 inet dhcp
-
-auto wlan0
-iface wlan0 inet static
-    address 192.168.4.1
-    netmask 255.255.255.0
-    network 192.168.4.0
-    broadcast 192.168.4.255
-```
-
-### Firewall Configuration
-
-```bash
-# Install and configure UFW firewall
-sudo apt install -y ufw
-
-# Allow SSH, HTTP, and hotspot traffic
-sudo ufw allow ssh
-sudo ufw allow 3000
-sudo ufw allow 8080
-sudo ufw allow from 192.168.4.0/24
-
-# Enable firewall
-sudo ufw enable
-```
-
-### Performance Optimization
-
-```bash
-# Overclock settings (optional - for better performance)
-sudo nano /boot/config.txt
-
-# Add these lines:
-over_voltage=2
-arm_freq=1400
-gpu_freq=500
-
-# GPU memory split (adjust based on your needs)
-gpu_mem=128
-
-# Enable hardware acceleration
-sudo nano /boot/config.txt
-
-# Add these lines:
-dtoverlay=vc4-kms-v3d
-max_framebuffers=2
-```
-
-### Storage Setup
-
-For optimal storage performance on Raspberry Pi:
-
-```bash
-# Create storage directories
-sudo mkdir -p /mnt/babylonpiles/data
-sudo mkdir -p /mnt/babylonpiles/piles
-sudo mkdir -p /tmp/babylonpiles
-
-# Set permissions
-sudo chown -R $USER:$USER /mnt/babylonpiles
-sudo chmod -R 755 /mnt/babylonpiles
-
-# If using external storage
-sudo mkdir -p /mnt/external
-sudo mount /dev/sda1 /mnt/external  # Adjust device as needed
-```
-
-### Docker Configuration
-
-```bash
-# Create docker-compose override for Raspberry Pi
-nano docker-compose.override.yml
-
-# Add this configuration:
-version: '3.8'
-services:
-  backend:
-    environment:
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - /mnt/babylonpiles/data:/mnt/babylonpiles/data
-      - /mnt/babylonpiles/piles:/mnt/babylonpiles/piles
-      - /tmp/babylonpiles:/tmp/babylonpiles
-    devices:
-      - /dev/vchiq:/dev/vchiq  # For hardware acceleration
-    privileged: true  # Required for WiFi hotspot
-    network_mode: host  # For better network performance
-
-  storage:
-    volumes:
-      - /mnt/babylonpiles/data:/mnt/hdd1
-      - /mnt/external:/mnt/hdd2  # If using external storage
-    environment:
-      - MAX_DRIVES=2
-```
-
-### Final Setup Steps
-
-```bash
-# Clone and start BabylonPiles
-git clone --recurse-submodules https://github.com/VictoKu1/babylonpiles.git
-cd babylonpiles
-
-# Start services
-docker-compose up -d
-
-# Check service status
-docker-compose ps
-docker-compose logs -f
-
-# Test hotspot functionality
-curl http://localhost:8080/api/v1/system/hotspot/requirements
-```
-
-### Troubleshooting Raspberry Pi
-
-**WiFi Hotspot Issues:**
-```bash
-# Check WiFi interface
-iwconfig
-ip addr show wlan0
-
-# Restart network services
-sudo systemctl restart networking
-sudo systemctl restart hostapd
-sudo systemctl restart dnsmasq
-
-# Check service status
-sudo systemctl status hostapd
-sudo systemctl status dnsmasq
-
-# View logs
-sudo journalctl -u hostapd -f
-sudo journalctl -u dnsmasq -f
-```
-
-**Performance Issues:**
-```bash
-# Monitor system resources
-htop
-df -h
-free -h
-
-# Check Docker resource usage
-docker stats
-
-# Optimize Docker settings
-sudo nano /etc/docker/daemon.json
-
-# Add these settings:
-{
-  "storage-driver": "overlay2",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  }
-}
-```
-
-**Storage Issues:**
-```bash
-# Check disk space
-df -h
-
-# Clean up Docker
-docker system prune -a
-
-# Check storage permissions
-ls -la /mnt/babylonpiles/
-```
-
-### Recommended Hardware
-
-- **Raspberry Pi 4** (4GB or 8GB RAM recommended)
-- **Class 10 SD card** (32GB minimum, 64GB+ recommended)
-- **External USB 3.0 storage** for content
-- **USB WiFi adapter** (if not using built-in WiFi)
-- **Active cooling** for sustained performance
-
-### Security Considerations
-
-```bash
-# Change default passwords
-sudo passwd pi
-sudo passwd root
-
-# Update SSH configuration
-sudo nano /etc/ssh/sshd_config
-
-# Set these options:
-PermitRootLogin no
-PasswordAuthentication no
-PubkeyAuthentication yes
-
-# Restart SSH
-sudo systemctl restart ssh
-```
+Kiwix is available at [localhost:8081](http://localhost:8081) on the Docker host. It has a read-only ZIM mount and does not enforce BabylonPiles permissions. For private content on another device, authenticate to BabylonPiles, download the file, and open it locally in Kiwix.
 
 ## Troubleshooting
 
-- **Port conflicts**: Ensure ports 8080 and 3000 are free
-- **Permission issues**: Run Docker as administrator (Windows) or add user to docker group (Linux)
-- **Services not starting**: Check logs with `docker-compose logs -f`
-- **WiFi hotspot not working**: Check hostapd and dnsmasq services
-- **Performance issues**: Monitor system resources and optimize Docker settings
-
----
-
-## FAQ
-
-**Q: Can I run BabylonPiles without Docker?**
-A: No. Docker Compose is now the only supported way to run BabylonPiles. This ensures a consistent, cross-platform experience.
-
-**Q: How do I update the app?**
-A: Pull the latest code, refresh submodules, and rebuild:
-
-```bash
-git pull
-git submodule update --init --recursive
-docker-compose up --build -d
-```
-
----
-
-For more details, see the [README.md](../README.md), [Mirrored Sources Guide](MIRRORING.md), [Storage Guide](STORAGE.md), or [API documentation](API.md). 
-
-## Manual Repository Entry
-
-You can now add custom content repositories directly from the frontend interface. When using the 'Manual Entry...' option in the repository dropdown, you will be prompted for:
-- Repository Name
-- Repository URL (required)
-- Info URL (optional; for file metadata)
-
-If you do not provide an Info URL, file info (the 'i' button) will not be available for files from that source. The backend will store your custom source in `sources.json` automatically. 
+- Inspect `docker compose ps` and service logs; use the helper equivalents when managed storage is configured.
+- Initialize submodules before rebuilding mirrorer.
+- Recreate a service after changing its mounts or environment.
+- Check that a removable disk is mounted at its expected host path before starting storage.
+- For login, HTTPS, transfer limits, and state upgrades, use [Security setup](SECURITY_SETUP.md).
+- Test the helper without host mutations using `python3 -m unittest discover -s tests -p 'test_installer*.py' -v` on a Unix test environment. The extra parser test uses the installed Compose CLI to validate a fixture; it never creates containers and skips when the CLI is unavailable.

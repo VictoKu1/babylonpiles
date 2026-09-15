@@ -1,0 +1,28 @@
+#!/bin/sh
+# Preserve Git's stdin ref updates while selecting a local interpreter.
+privacy_root=$(git rev-parse --show-toplevel) || exit 2
+cd "$privacy_root" || exit 2
+privacy_python=$(git config --local --get privacy.python)
+privacy_config_status=$?
+if [ "$privacy_config_status" -eq 0 ]; then
+    if ! "$privacy_python" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+        echo 'Privacy guard: privacy.python must name a working Python 3.8+ executable. Set it with git config --local privacy.python /path/to/python.' >&2
+        exit 2
+    fi
+elif [ "$privacy_config_status" -eq 1 ]; then
+    privacy_python=
+    for privacy_candidate in python3 python; do
+        if "$privacy_candidate" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+            privacy_python=$privacy_candidate
+            break
+        fi
+    done
+    if [ -z "$privacy_python" ]; then
+        echo 'Privacy guard: install Python 3.8+ or set git config --local privacy.python /path/to/python. Push blocked.' >&2
+        exit 2
+    fi
+else
+    echo 'Privacy guard: cannot read local interpreter configuration. Push blocked.' >&2
+    exit 2
+fi
+exec "$privacy_python" scripts/check_privacy.py --pre-push --remote "${1-}"

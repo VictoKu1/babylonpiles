@@ -10,17 +10,18 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY storage/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY storage/storage_service.py /app/storage_service.py
+COPY backend/app/core/secrets.py /app/service_secrets.py
 
 # Create directory for HDD mount (only hdd1 by default)
 RUN mkdir -p /mnt/hdd1
 
 # Create data directories
-RUN mkdir -p /app/data/chunks /app/data/metadata /app/data/logs
+RUN mkdir -p /app/data/chunks /app/data/metadata /app/data/logs /run/babylonpiles/secrets
 
 EXPOSE 8001
 

@@ -8,12 +8,12 @@ import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
 from app.core.config import settings
+from app.core.request_limits import RequestBodyLimitMiddleware
 from app.core.database import init_db
 from app.api.v1.api import api_router
 from app.core.system import SystemManager
@@ -86,14 +86,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The frontend proxies /api on the same origin; private APIs do not grant CORS.
+app.add_middleware(RequestBodyLimitMiddleware, max_upload_size=settings.max_upload_size)
+
+@app.exception_handler(ValueError)
+async def invalid_input(request, exc):
+    from app.core.transfers import TransferTooLarge
+    return JSONResponse(status_code=413 if isinstance(exc, TransferTooLarge) else 400,
+                        content={"detail": str(exc)})
 
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
@@ -125,6 +125,7 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8080,
-        reload=True,
-        log_level="info"
+        reload=False,
+        log_level="info",
+        access_log=False,
     ) 

@@ -8,11 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import Dict, Any, List, Optional
 import os
-import shutil
+import tempfile
 from pathlib import Path
 import aiohttp
 import asyncio
-from urllib.parse import urlparse
+from urllib.parse import urljoin
 import json
 from fastapi import Response
 from bs4 import BeautifulSoup
@@ -24,8 +24,28 @@ from app.models.pile import Pile
 from app.models.update_log import UpdateLog
 from app.schemas.pile import PileCreate, PileUpdate, PileResponse
 from app.modules.sources.gutenberg import GutenbergSource
+from app.core.public_http import PublicSession, validate_url as public_url
+from app.core.paths import validate_name, resolve_path, validate_stored_path
+from app.core.transfers import save_upload, save_chunks, TransferTooLarge
 
 router = APIRouter()
+
+
+def sources_catalog():
+    path = Path(settings.state_dir) / "sources.json"
+    seed = Path(__file__).resolve().parents[2] / "sources.json"
+    with (path if path.exists() else seed).open(encoding="utf-8") as source:
+        return json.load(source)
+
+
+def managed_pile_path(value):
+    # Older database rows must satisfy the same boundary as new uploads.
+    for root in (settings.piles_dir, settings.data_dir):
+        try:
+            return validate_stored_path(root, value)
+        except ValueError:
+            pass
+    raise HTTPException(status_code=400, detail="Invalid stored content path")
 
 @router.get("/")
 async def get_piles(
@@ -84,11 +104,7 @@ async def get_categories(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
 @router.get("/sources-list")
 async def get_sources_list():
     """Serve the sources.json file for Quick Add dynamic source listing (new format)."""
-    import os
-    sources_path = os.path.join(os.path.dirname(__file__), "..", "..", "sources.json")
-    with open(os.path.abspath(sources_path), "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return Response(content=json.dumps(data), media_type="application/json")
+    return sources_catalog()
 
 @router.post("/add-source")
 async def add_source(request: Request):
@@ -97,37 +113,35 @@ async def add_source(request: Request):
     name = data.get('name')
     repo_url = data.get('repo_url')
     info_url = data.get('info_url')
-    if not name or not repo_url:
+    if not isinstance(name, str) or not name.strip() or len(name) > 200 or not isinstance(repo_url, str):
         raise HTTPException(status_code=400, detail="Name and repo_url are required.")
-    # Path to sources.json
-    import os
-    sources_path = os.path.join(os.path.dirname(__file__), "..", "..", "sources.json")
-    sources_path = os.path.abspath(sources_path)
-    # Load existing sources
-    if os.path.exists(sources_path):
-        with open(sources_path, "r", encoding="utf-8") as f:
-            sources = json.load(f)
-    else:
-        sources = {}
+    public_url(repo_url)
+    if info_url not in (None, "None", ""):
+        if not isinstance(info_url, str):
+            raise HTTPException(status_code=400, detail="Invalid info_url")
+        public_url(info_url)
+    sources = sources_catalog()
     # Store info_url as 'None' string if None for frontend compatibility
     sources[name] = [repo_url, info_url if info_url is not None else 'None']
-    with open(sources_path, "w", encoding="utf-8") as f:
-        json.dump(sources, f, indent=2, ensure_ascii=False)
+    sources_path = Path(settings.state_dir) / "sources.json"
+    sources_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=sources_path.parent, prefix="sources-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(sources, f, indent=2, ensure_ascii=False)
+        os.replace(temporary, sources_path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return sources
 
 @router.get("/browse-source")
 async def browse_source(url: str, description_url: str = None):
     """List the immediate children (files/folders) of a directory URL for any source. Optionally accept a description_url for future use."""
-    import aiohttp
-    import ssl
-    from bs4 import BeautifulSoup
-    import re
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
+    public_url(url)
     skip_names = {"Name", "Last modified", "Size", "Description", "README"}
-    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
+    async with PublicSession(max_bytes=settings.max_catalog_size) as session:
         async with session.get(url) as resp:
+            resp.raise_for_status()
             html = await resp.text()
             soup = BeautifulSoup(html, "html.parser")
             items = []
@@ -168,7 +182,7 @@ async def browse_source(url: str, description_url: str = None):
                     is_dir = href.endswith("/")
                     items.append({
                         "name": name,
-                        "url": url + href,
+                        "url": urljoin(url, href),
                         "is_dir": is_dir,
                         "size": size if not is_dir else None,
                         "last_modified": last_modified
@@ -177,12 +191,11 @@ async def browse_source(url: str, description_url: str = None):
 
 @router.get("/file-info")
 async def file_info(filename: str, description_url: str):
-    """Fetch file info HTML snippet for a given filename from the description_url (e.g., Kiwix library XML)."""
-    import aiohttp
-    from bs4 import BeautifulSoup
-    import re
-    async with aiohttp.ClientSession() as session:
+    """Return selected metadata as JSON text, never executable source markup."""
+    public_url(description_url)
+    async with PublicSession(max_bytes=settings.max_catalog_size) as session:
         async with session.get(description_url) as resp:
+            resp.raise_for_status()
             content = await resp.text()
             soup = BeautifulSoup(content, "html.parser")
             # Instead of matching any attribute containing the filename, match the 'name' attribute that starts with the base filename
@@ -208,8 +221,19 @@ async def file_info(filename: str, description_url: str):
             if not entry:
                 entry = soup.find(lambda tag: tag.string and filename in tag.string)
             if not entry:
-                return Response(content=f'<div>File info for <b>{filename}</b> not found in description file.</div>', media_type="text/html")
-            return Response(content=entry.prettify(), media_type="text/html")
+                return {"found": False}
+            return {"found": True, **{
+                key: str(entry.attrs.get(key, ""))
+                for key in ("title", "description", "language", "creator", "publisher")
+            }}
+
+
+@router.get("/gutenberg-search")
+async def gutenberg_search(query: str):
+    """Search the public Gutenberg catalogue before the dynamic pile route."""
+    source = GutenbergSource()
+    results = await source.get_available_content(query)
+    return {"success": True, "data": results}
 
 @router.get("/{pile_id}")
 async def get_pile(
@@ -233,6 +257,8 @@ async def get_pile(
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=413 if isinstance(e, TransferTooLarge) else 400, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -279,6 +305,8 @@ async def create_pile(
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=413 if isinstance(e, TransferTooLarge) else 400, detail=str(e)) from e
     except Exception as e:
         await db.rollback()
         raise HTTPException(
@@ -318,6 +346,8 @@ async def update_pile(
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=413 if isinstance(e, TransferTooLarge) else 400, detail=str(e)) from e
     except Exception as e:
         await db.rollback()
         raise HTTPException(
@@ -342,11 +372,9 @@ async def delete_pile(
             )
         
         # Delete associated file if it exists
-        if pile.file_path and os.path.exists(pile.file_path):
-            try:
-                os.remove(pile.file_path)
-            except Exception as e:
-                logger.warning(f"Could not delete file {pile.file_path}: {e}")
+        if pile.file_path:
+            file_path = managed_pile_path(pile.file_path)
+            file_path.unlink(missing_ok=True)
         
         # Delete pile from database
         await db.delete(pile)
@@ -358,6 +386,8 @@ async def delete_pile(
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=413 if isinstance(e, TransferTooLarge) else 400, detail=str(e)) from e
     except Exception as e:
         await db.rollback()
         raise HTTPException(
@@ -387,13 +417,14 @@ async def upload_pile_file(
         piles_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate filename
-        file_extension = Path(file.filename).suffix if file.filename else ""
+        validate_name(pile.name)
+        original_name = validate_name(file.filename or "upload")
+        file_extension = Path(original_name).suffix
         filename = f"{pile.name}{file_extension}"
-        file_path = piles_dir / filename
+        file_path = resolve_path(piles_dir, filename)
         
         # Save file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        await save_upload(file, file_path, settings.max_upload_size)
         
         # Update pile with file information
         pile.file_path = str(file_path)
@@ -411,6 +442,8 @@ async def upload_pile_file(
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=413 if isinstance(e, TransferTooLarge) else 400, detail=str(e)) from e
     except Exception as e:
         await db.rollback()
         raise HTTPException(
@@ -434,19 +467,22 @@ async def download_pile_file(
                 detail="Pile not found"
             )
         
-        if not pile.file_path or not os.path.exists(pile.file_path):
+        file_path = managed_pile_path(pile.file_path) if pile.file_path else None
+        if not file_path or not file_path.is_file():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Pile file not found"
             )
         
         return FileResponse(
-            pile.file_path,
-            filename=os.path.basename(pile.file_path),
+            file_path,
+            filename=file_path.name,
             media_type='application/octet-stream'
         )
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=413 if isinstance(e, TransferTooLarge) else 400, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -482,6 +518,8 @@ async def toggle_pile_status(
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=413 if isinstance(e, TransferTooLarge) else 400, detail=str(e)) from e
     except Exception as e:
         await db.rollback()
         raise HTTPException(
@@ -516,185 +554,78 @@ async def get_pile_logs(
         )
 
 @router.post("/{pile_id}/download-source")
-async def download_pile_source(
-    pile_id: int,
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
-    """Download content from the pile's source URL"""
+async def download_pile_source(pile_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+    """Import content atomically, inside managed storage and the public network boundary."""
+    pile = (await db.execute(select(Pile).where(Pile.id == pile_id))).scalar_one_or_none()
+    if not pile:
+        raise HTTPException(status_code=404, detail="Pile not found")
+    if pile.is_downloading:
+        raise HTTPException(status_code=409, detail="Pile is already being downloaded")
+    if pile.source_type == "torrent":
+        raise HTTPException(status_code=400, detail="Torrent imports are disabled. Download with a trusted local client and upload the resulting file.")
     try:
-        result = await db.execute(select(Pile).where(Pile.id == pile_id))
-        pile = result.scalar_one_or_none()
-        
-        if not pile:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Pile not found"
-            )
-        
-        if not pile.source_url:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Pile has no source URL"
-            )
-        
-        # Check if already downloading
-        if pile.is_downloading:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Pile is already being downloaded"
-            )
-        
-        # Set downloading status
-        pile.is_downloading = True
-        pile.download_progress = 0.0
-        await db.commit()
-        
-        # Create data directory if it doesn't exist
-        data_dir = Path(settings.data_dir)
-        data_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate filename from URL
-        parsed_url = urlparse(pile.source_url)
-        filename = os.path.basename(parsed_url.path)
-        if not filename:
-            filename = f"{pile.name}.{pile.source_type}"
-        
-        file_path = data_dir / filename
-        temp_file_path = data_dir / f"{filename}.tmp"
-        
-        try:
-            # Download file with proper error handling
-            timeout = aiohttp.ClientTimeout(total=3600)  # 1 hour timeout
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(pile.source_url) as response:
-                    if response.status != 200:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Failed to download from source: HTTP {response.status}"
-                        )
-                    
-                    # Get content length for progress tracking
-                    content_length = response.headers.get('content-length')
-                    total_size = int(content_length) if content_length else None
-                    downloaded_size = 0
-                    
-                    # Download to temporary file first
-                    with open(temp_file_path, 'wb') as f:
-                        async for chunk in response.content.iter_chunked(8192):
-                            f.write(chunk)
-                            downloaded_size += len(chunk)
-                            
-                            # Update progress more frequently for better UX
-                            if total_size and downloaded_size % (512 * 1024) == 0:  # Every 512KB
-                                pile.download_progress = downloaded_size / total_size
-                                await db.commit()
-                    
-                    # Verify download completed successfully
-                    if total_size and downloaded_size != total_size:
-                        raise Exception(f"Download incomplete: {downloaded_size}/{total_size} bytes")
-                    
-                    # Move temporary file to final location
-                    if temp_file_path.exists():
-                        temp_file_path.rename(file_path)
-                    else:
-                        raise Exception("Temporary file not found after download")
-            
-            # Verify file exists and has content
-            if not file_path.exists() or file_path.stat().st_size == 0:
-                raise Exception("Downloaded file is empty or missing")
-            
-            # Update pile with file information
-            pile.file_path = str(file_path)
-            pile.file_size = os.path.getsize(file_path)
-            pile.file_format = Path(filename).suffix.lstrip(".")
-            pile.is_downloading = False
-            pile.download_progress = 1.0
-            pile.is_active = True
-            
+        validate_name(pile.name)
+        if pile.source_type == "gutenberg":
+            GutenbergSource._book_id(pile.source_url)
+        else:
+            url = public_url(pile.source_url)
+            filename = validate_name(url.path.rsplit("/", 1)[-1] or f"{pile.name}.bin")
+            target = resolve_path(settings.data_dir, filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    pile.is_downloading = True
+    pile.download_progress = 0.0
+    await db.commit()
+    try:
+        async def progress(name, fraction):
+            pile.download_progress = fraction
             await db.commit()
-            await db.refresh(pile)
-            
-            return {
-                "success": True,
-                "data": pile.to_dict(),
-                "message": f"Successfully downloaded {filename}"
-            }
-            
-        except Exception as e:
-            # Clean up temporary file if it exists
-            if temp_file_path.exists():
-                try:
-                    temp_file_path.unlink()
-                except:
-                    pass
-            
-            # Reset downloading status on error
-            try:
-                pile.is_downloading = False
-                pile.download_progress = 0.0
-                await db.commit()
-            except:
-                # If commit fails, rollback and try again
-                await db.rollback()
-                pile.is_downloading = False
-                pile.download_progress = 0.0
-                await db.commit()
-            raise e
-            
-    except HTTPException:
+
+        if pile.source_type == "gutenberg":
+            log = UpdateLog(pile_id=pile.id, update_type="download", status="running")
+            if not await GutenbergSource().download(pile, log, progress):
+                raise ValueError(log.error_message or "Book import failed")
+        else:
+            from app.modules.sources.http import progress_chunks
+            async with PublicSession() as session:
+                async with session.get(url) as response:
+                    response.raise_for_status()
+                    size = await save_chunks(progress_chunks(response, target, progress),
+                                             target, settings.max_file_size)
+            pile.file_path = str(target)
+            pile.file_size = size
+            pile.file_format = target.suffix.lstrip(".")
+        pile.is_downloading = False
+        pile.download_progress = 1.0
+        pile.is_active = True
+        await db.commit()
+        await db.refresh(pile)
+        return {"success": True, "data": pile.to_dict(), "message": "Content downloaded successfully"}
+    except BaseException as exc:
+        await db.rollback()
+        # Use a SQL update rather than reading ORM state expired by rollback.
+        await db.execute(update(Pile).where(Pile.id == pile_id).values(is_downloading=False, download_progress=0.0))
+        await db.commit()
+        if isinstance(exc, TransferTooLarge):
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if isinstance(exc, (aiohttp.ClientError, asyncio.TimeoutError)):
+            raise HTTPException(status_code=502, detail="Content source could not be downloaded") from exc
         raise
-    except Exception as e:
-        try:
-            await db.rollback()
-        except:
-            pass  # Ignore rollback errors
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error downloading pile source: {str(e)}"
-        )
+
 
 @router.post("/validate-url")
 async def validate_url(url: str = Form(...)) -> Dict[str, Any]:
-    """Validate if a URL is accessible"""
+    """Check public source response headers without downloading its body."""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as response:
-                if response.status == 200:
-                    # Get content length if available
-                    content_length = response.headers.get('content-length')
-                    file_size = int(content_length) if content_length else None
-                    # Don't read the body, just close
-                    await response.release()
-                    return {
-                        "success": True,
-                        "valid": True,
+        async with PublicSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                content_length = response.headers.get("content-length")
+                return {"success": True, "valid": response.status == 200,
                         "status_code": response.status,
-                        "file_size": file_size,
-                        "message": "URL is accessible"
-                    }
-                else:
-                    return {
-                        "success": True,
-                        "valid": False,
-                        "status_code": response.status,
-                        "message": f"URL returned status code {response.status}"
-                    }
-    except asyncio.TimeoutError:
-        return {
-            "success": True,
-            "valid": False,
-            "message": "URL validation timed out"
-        }
-    except Exception as e:
-        return {
-            "success": True,
-            "valid": False,
-            "message": f"Error validating URL: {str(e)}"
-        } 
-
-@router.get("/gutenberg-search")
-async def gutenberg_search(query: str):
-    """Search Project Gutenberg books using Gutendex API"""
-    source = GutenbergSource()
-    results = await source.get_available_content(query)
-    return {"success": True, "data": results} 
+                        "file_size": int(content_length) if content_length else None,
+                        "message": "URL is accessible" if response.status == 200 else "URL returned an error"}
+    except (ValueError, aiohttp.ClientError, asyncio.TimeoutError):
+        return {"success": True, "valid": False, "message": "URL is unavailable or not an allowed public source"}

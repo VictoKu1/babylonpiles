@@ -4,7 +4,8 @@ Database configuration and initialization
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import MetaData
+from sqlalchemy import MetaData, select
+import asyncio
 from app.core.config import settings
 import logging
 
@@ -48,6 +49,15 @@ async def init_db():
             await conn.run_sync(Base.metadata.create_all)
         
         logger.info("Database initialized successfully")
+        # Migrate all legacy plaintext rows before accepting requests.
+        from app.models.user import User
+        from app.core.passwords import hash_password, is_password_hash
+        async with AsyncSessionLocal() as session:
+            users = (await session.execute(select(User))).scalars().all()
+            for account in users:
+                if not is_password_hash(account.hashed_password):
+                    account.hashed_password = await asyncio.to_thread(hash_password, account.hashed_password)
+            await session.commit()
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
