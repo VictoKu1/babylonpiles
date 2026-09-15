@@ -317,7 +317,12 @@ class StorageManager:
         root = Path(self.drives[drive_id].path)
         if not root.is_absolute():
             raise HTTPException(status_code=400, detail="Invalid storage root")
-        target = root / "chunks" / chunk_id
+        # Guard the normalized string before passing it to filesystem APIs.
+        # The separator prevents a sibling such as hdd10 from matching hdd1.
+        target_path = os.path.abspath(root / "chunks" / chunk_id)
+        if not target_path.startswith(str(root).rstrip(os.sep) + os.sep):
+            raise HTTPException(status_code=400, detail="Invalid chunk path")
+        target = Path(target_path)
         for component in (*reversed(target.parents), target):
             try:
                 mode = component.lstat().st_mode

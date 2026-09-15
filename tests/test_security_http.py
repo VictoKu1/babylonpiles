@@ -1,8 +1,10 @@
 """Outbound tests stub transport only; no external network is contacted."""
+import asyncio
 import io
 import os
 from pathlib import Path
 import sys
+import socket
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -73,6 +75,30 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 http.validate_url(url)
 
+    async def test_malformed_authority_is_rejected_before_transport(self):
+        for url in ["http://exa mple.org/", "http://example.org|other.test/"]:
+            with self.subTest(url=url), patch.object(http.aiohttp, "ClientSession", FakeSession):
+                async with http.PublicSession() as session:
+                    with self.assertRaises(ValueError):
+                        async with session.get(url):
+                            pass
+        self.assertEqual(FakeSession.calls, [])
+
+    async def test_canonical_public_urls_preserve_authority_path_and_query(self):
+        cases = [
+            ("https://example.org/a b?x=a%2Fb#part", "https://example.org/a%20b?x=a/b"),
+            ("http://8.8.8.8:8080/a%2Fb?q=one%20two", "http://8.8.8.8:8080/a%2Fb?q=one%20two"),
+            ("https://[2606:4700:4700::1111]:8443/catalog", "https://[2606:4700:4700::1111]:8443/catalog"),
+            ("https://b\u00fccher.example/catalog", "https://xn--bcher-kva.example/catalog"),
+            ("https://example.org?empty=", "https://example.org/?empty="),
+        ]
+        for value, expected in cases:
+            with self.subTest(url=value), patch.object(http.aiohttp, "ClientSession", FakeSession):
+                async with http.PublicSession() as session:
+                    async with session.get(value) as response:
+                        self.assertEqual(response.status, 200)
+                self.assertEqual(FakeSession.calls[-1][0], expected)
+
     async def test_dns_answers_are_all_validated_and_returned_without_reresolution(self):
         resolver = http.PublicResolver()
         try:
@@ -124,6 +150,101 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         async with http.PublicSession() as session:
             self.assertIs(session.session.connector._ssl, True)
             self.assertFalse(session.session.trust_env)
+
+
+class ConnectorBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    """Use the actual aiohttp connector; all sockets stay on loopback."""
+
+    async def asyncSetUp(self):
+        self.requests = []
+        self.redirect = None
+
+        async def serve(reader, writer):
+            try:
+                self.requests.append(await reader.readuntil(b"\r\n\r\n"))
+                if self.redirect:
+                    reply = ("HTTP/1.1 302 Found\r\nLocation: " + self.redirect +
+                             "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").encode()
+                else:
+                    reply = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nsafe"
+                writer.write(reply)
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        self.server = await asyncio.start_server(serve, "127.0.0.1", 0)
+        self.port = self.server.sockets[0].getsockname()[1]
+
+    async def asyncTearDown(self):
+        self.server.close()
+        await self.server.wait_closed()
+
+    def answers(self, *addresses):
+        return [{"hostname": "source.example", "host": address, "port": self.port,
+                 "family": socket.AF_INET, "proto": socket.IPPROTO_TCP, "flags": 0}
+                for address in addresses]
+
+    async def connect_public_to_fixture(self, *, addr_infos, **kwargs):
+        # Replace only external socket creation, after real connector validation.
+        self.assertTrue(addr_infos)
+        self.assertEqual({entry[4][0] for entry in addr_infos}, {"8.8.8.8"})
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setblocking(False)
+        try:
+            await asyncio.get_running_loop().sock_connect(sock, ("127.0.0.1", self.port))
+        except BaseException:
+            sock.close()
+            raise
+        return sock
+
+    async def test_private_and_mixed_dns_never_reach_the_http_server(self):
+        for addresses in [("127.0.0.1",), ("8.8.8.8", "127.0.0.1")]:
+            with self.subTest(addresses=addresses), patch.object(
+                http.aiohttp.resolver.DefaultResolver, "resolve",
+                AsyncMock(return_value=self.answers(*addresses)),
+            ):
+                async with http.PublicSession() as session:
+                    with self.assertRaises((ValueError, http.aiohttp.ClientError)):
+                        async with session.get(f"http://source.example:{self.port}/private"):
+                            pass
+            self.assertEqual(self.requests, [])
+
+    async def test_numeric_loopback_aliases_never_reach_the_http_server(self):
+        for host in ["127.0.0.1", "2130706433", "127.1", "0177.0.0.1", "0x7f000001"]:
+            with self.subTest(host=host), patch.object(
+                http.aiohttp.resolver.DefaultResolver, "resolve",
+                AsyncMock(return_value=self.answers("127.0.0.1")),
+            ):
+                async with http.PublicSession() as session:
+                    with self.assertRaises((ValueError, http.aiohttp.ClientError)):
+                        async with session.get(f"http://{host}:{self.port}/private"):
+                            pass
+            self.assertEqual(self.requests, [])
+
+    async def test_public_dns_uses_checked_addresses_and_retains_host_header(self):
+        with patch.object(http.aiohttp.resolver.DefaultResolver, "resolve",
+                          AsyncMock(return_value=self.answers("8.8.8.8"))), patch(
+            "aiohttp.connector.aiohappyeyeballs.start_connection", self.connect_public_to_fixture,
+        ):
+            async with http.PublicSession() as session:
+                async with session.get(f"http://source.example:{self.port}/catalog?q=one") as response:
+                    self.assertEqual(await response.text(), "safe")
+        self.assertEqual(len(self.requests), 1)
+        self.assertIn(b"GET /catalog?q=one HTTP/1.1\r\n", self.requests[0])
+        self.assertIn(f"Host: source.example:{self.port}\r\n".encode(), self.requests[0])
+
+    async def test_public_redirect_to_private_address_stops_before_another_connection(self):
+        self.redirect = f"http://127.0.0.1:{self.port}/private"
+        with patch.object(http.aiohttp.resolver.DefaultResolver, "resolve",
+                          AsyncMock(return_value=self.answers("8.8.8.8"))), patch(
+            "aiohttp.connector.aiohappyeyeballs.start_connection", self.connect_public_to_fixture,
+        ):
+            async with http.PublicSession() as session:
+                with self.assertRaises(ValueError):
+                    async with session.get(f"http://source.example:{self.port}/redirect"):
+                        pass
+        self.assertEqual(len(self.requests), 1)
 
 
 if __name__ == "__main__":

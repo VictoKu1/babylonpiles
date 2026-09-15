@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 import ipaddress
 import json
+import re
 import socket
 
 import aiohttp
@@ -129,12 +130,22 @@ class PublicSession:
     async def get(self, url, *, timeout=None, allow_redirects=True, max_bytes=None, headers=None):
         current = validate_url(str(url))
         for hop in range(6):
+            # Validate the exact serialized value passed to the transport. This
+            # syntax check supplements the public IP/DNS policy above; it does
+            # not replace address checks or per-redirect validation.
+            request_url = str(current)
+            if not re.fullmatch(
+                r"https?://(?:[A-Za-z0-9._~!$&'()*+,;=-]+|\[[A-Fa-f0-9:.]+\])"
+                r"(?::[0-9]{1,5})?(?:[/?][^\s#]*)?",
+                request_url,
+            ):
+                raise ValueError("Invalid source URL syntax")
             options = {"allow_redirects": False}
             if timeout is not None:
                 options["timeout"] = timeout
             if headers is not None:
                 options["headers"] = headers
-            async with self.session.get(current, **options) as response:
+            async with self.session.get(request_url, **options) as response:
                 if allow_redirects and response.status in {301, 302, 303, 307, 308}:
                     location = response.headers.get("Location")
                     if not location or hop == 5:

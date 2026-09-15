@@ -146,6 +146,30 @@ class StorageBoundaryTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 409)
         self.assertEqual(self.manager.file_allocations["safe_id"].file_size, 125)
 
+    def test_allocation_rejects_traversal_in_configured_root_before_creating_directories(self):
+        self.manager.drives["hdd1"].path = str(self.root / "hdd2" / ".." / "hdd1")
+        with self.assertRaises(HTTPException) as caught:
+            self.manager.allocate_file(10, "safe")
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertEqual(list(self.root.glob("*/chunks")), [])
+        self.assertFalse(self.manager.file_allocations)
+
+    def test_valid_allocation_can_be_deleted_without_touching_a_sibling_drive(self):
+        allocation = self.manager.allocate_file(10, "safe")
+        chunk = self.manager.chunks[allocation.chunks[0]["id"]]
+        target = Path(chunk.path)
+        self.assertEqual(target, self.root / chunk.drive_id / "chunks" / "safe_chunk_0")
+        target.write_bytes(b"content")
+        sibling = self.root / (chunk.drive_id + "0") / "chunks"
+        sibling.mkdir(parents=True)
+        unrelated = sibling / "safe_chunk_0"
+        unrelated.write_bytes(b"keep")
+        with patch.object(storage, "storage_manager", self.manager):
+            storage.delete_file("safe")
+        self.assertFalse(target.exists())
+        self.assertEqual(unrelated.read_bytes(), b"keep")
+        self.assertNotIn("safe", self.manager.file_allocations)
+
     def test_restored_chunk_metadata_prevents_reusing_an_existing_file_id(self):
         self.manager.allocate_file(10, "safe_id")
         # Existing storage versions restore chunks but not file_allocations.
