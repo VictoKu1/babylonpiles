@@ -10,6 +10,7 @@ COPY mirrorer/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY mirrorer /app
+COPY backend/app/core/secrets.py /app/service_secrets.py
 COPY vendor/EmergencyStorage /vendor/EmergencyStorage
 
 # Windows checkouts may give the vendored Bash scripts CRLF line endings.

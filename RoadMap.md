@@ -1,186 +1,45 @@
-# BabylonPiles Roadmap
+# BabylonPiles roadmap
 
-BabylonPiles is now a Docker-only, cross-platform, modular offline knowledge server. All development and deployment are focused on Docker Compose and web/API-first features.
+This roadmap describes the current source tree. Planned items are development goals, not released features or dated commitments. Use [TODO.md](TODO.md) for actionable follow-up work and [README.md](README.md) for setup.
 
----
+## Implemented
 
-## ✅ Completed
+| Area | Current behavior |
+| --- | --- |
+| Deployment | Docker Compose runs the frontend, backend, storage service, mirrorer, and Kiwix. The optional Unix helper manages Compose and storage mappings. |
+| Authentication | Administrator-only management APIs, hashed passwords, browser session cookies, and local account creation/password reset. |
+| Files | Browse, upload, download, move, delete, preview supported formats, and publish selected files. |
+| Piles | HTTP, Kiwix, and Gutenberg adapters; pile CRUD and download controls; custom repository entries in persistent state. |
+| Updates | Manual pile update endpoints, update logs, and basic per-pile backup/rollback. |
+| Mirrors | UTC scheduling, run history, and logs for supported OpenStreetMap and Internet Archive workflows. |
+| Storage | Configured content roots, chunk allocation/migration, and helper-managed host directories or devices. |
+| Monitoring | Dashboard and system metrics polled every 30 seconds; separate content totals and container-visible disk usage. |
+| Tests | Isolated backend regressions, frontend component/auth checks, installer fixtures, and a disposable Docker integration harness. |
 
-### Core Infrastructure
-- Docker Compose as the only supported deployment method
-- FastAPI backend with async SQLAlchemy
-- React frontend with TypeScript
-- JWT authentication and security
-- Docker-only, OS-agnostic documentation
+Internet Archive jobs currently prepare catalogs and download instructions. Direct torrent imports are disabled. The default Docker deployment does not provide working host Wi-Fi management or enforce Store-mode network isolation. Consult the [mirroring](docs/MIRRORING.md), [storage](docs/STORAGE.md), and [installation](docs/INSTALL.md) guides before relying on those workflows.
 
-### Content Management
-- Modular content sources (Kiwix, HTTP, Torrent, Gutenberg)
-- Pile management (CRUD operations)
-- Content update system with progress tracking
-- Kiwix-Serve integration for .ZIM files
-- EmergencyStorage-backed mirrored sources for OpenStreetMap and Internet Archive
-- Content validation and error handling
+## Near-term work
 
-### File Management
-- Drag-and-drop file move and parent folder navigation
-- Backend move API for files/folders
-- Seamless drag and drop file uploads from desktop to browser
-- Visual upload feedback with progress indicators
-- File permission management with public/private toggles
-- Enhanced error handling and user notifications
+- Improve storage reporting for empty content roots and deployments where content, piles, and chunk drives use different filesystems.
+- Correct remaining endpoint/consumer mismatches, including the update-status route described in [API limitations](docs/API.md).
+- Add continuous integration for the existing tests, frontend checks, dependency review, and Docker builds.
+- Expand browser and cross-service tests for login, file operations, scheduled mirroring, and failure recovery.
+- Measure large-directory, transfer, memory, and image-build performance before setting optimization targets.
+- Improve keyboard access, mobile layouts, and error recovery in the existing interface.
+- Add an account-management interface on top of the existing administrator authorization.
 
-### Storage & Analytics
-- Multi-location storage allocation during startup
-- Storage analysis with detailed space usage
-- Connect/disconnect drives functionality
-- Safe reallocation with data migration
-- Accurate dashboard storage metrics (content vs system storage)
-- Real-time storage updates after file operations
+## Content and operations
 
-### System Management
-- System monitoring and metrics
-- Mode switching (Learn/Store)
-- CPU, memory, and disk usage monitoring
-- System health tracking
-- Performance optimization
+- Index stored content and provide cross-content search. Kiwix's archive reader is separate from application-wide search.
+- Extend scheduling to standard pile updates.
+- Expand Internet Archive downloads beyond the current catalog workflow.
+- Add backup verification, retention, and full-instance recovery tools beyond basic per-pile rollback.
+- Implement and test host-network integration for Store/Learn mode and Wi-Fi controls.
+- Improve storage migration diagnostics and failure recovery.
+- Add API rate limiting and security audit events.
 
-### User Experience
-- Custom notification system replacing browser alerts
-- Visual feedback for all operations
-- Error recovery and retry mechanisms
-- Responsive design and accessibility
-- Real-time progress tracking
+## Longer-term ideas
 
-### Testing & Quality
-- Comprehensive test suite organization
-- Automated test runner with cross-platform support
-- Test categories: API, System, and Functionality tests
-- Detailed test documentation and execution guide
-- Error handling and validation testing
+Additional source adapters, a plugin interface, batch file operations, push-based progress updates, offline browser caching, instance-to-instance sharing, and optional remote backups remain possible extensions. Native mobile apps, client libraries, and community infrastructure need their own designs and maintainers before becoming release commitments.
 
-### Documentation
-- CONTRIBUTING.md and code style guidelines
-- Comprehensive API documentation
-- Storage management guides
-- Installation and setup instructions
-- Troubleshooting guides
-
-## Recent Features
-
-- Manual repository entry from the frontend (Quick Add): Users can now add custom repositories, which are stored in sources.json via the backend. If no Info URL is provided, the system adapts and hides the info button for those sources.
-- Mirrored Sources in Updates: Users can now create OpenStreetMap and Internet Archive mirror jobs, run them manually, schedule them in UTC, and inspect recent run logs from the UI.
-
----
-
-## 🛠️ In Progress / Planned
-
-### Performance & Optimization
-- Streamline Docker images for size and performance
-- Automated Docker image builds and releases (CI/CD)
-- Performance optimization for large file operations
-- Memory usage optimization
-- Startup time improvements
-
-### User Management & Security
-- User roles and permissions system
-- Advanced authentication options
-- Security auditing and logging
-- Vulnerability scanning in Docker images
-- Multi-user support with isolation
-
-### Content & Discovery
-- Content indexing and search functionality
-- Content discovery and recommendations
-- Content versioning and rollback
-- More content sources (CD3WD, RSS, and custom source plugins)
-- Content categorization and tagging
-
-### Admin & Management
-- Admin portal for uploading, updating, deleting modules
-- Advanced storage analytics and reporting
-- System configuration management
-- Backup and restore functionality
-- Monitoring and alerting system
-
-### User Interface
-- Responsive web interface improvements
-- Advanced file management features
-- Multi-select and batch file operations
-- Undo/redo for file moves
-- Enhanced drag-and-drop with visual cues
-- Accessibility improvements
-
-### Development & Testing
-- Automated tests (unit, integration, end-to-end)
-- UI component testing
-- Performance testing suite
-- Security testing framework
-- Continuous integration pipeline
-
-### Community & Ecosystem
-- Community chat (Discord/Matrix)
-- Plugin system for custom content sources
-- API client libraries
-- More example content piles
-- Community documentation and guides
-
-### Advanced Features
-- WebSocket support for real-time updates
-- Advanced search and filtering
-- Content compression and optimization
-- Offline synchronization
-- Mobile app support
-
----
-
-## 🎯 Development Priorities
-
-### High Priority
-1. **Performance Optimization**: Improve startup times and resource usage
-2. **User Management**: Implement proper user roles and permissions
-3. **Content Search**: Add indexing and search functionality
-4. **Security Hardening**: Implement comprehensive security measures
-
-### Medium Priority
-1. **UI/UX Improvements**: Enhanced drag-and-drop and visual feedback
-2. **Testing Infrastructure**: Comprehensive automated testing
-3. **Documentation**: Expand guides and tutorials
-4. **Community Features**: Chat and collaboration tools
-
-### Low Priority
-1. **Mobile Support**: Native mobile applications
-2. **Advanced Analytics**: Detailed usage and performance metrics
-3. **Plugin System**: Extensible architecture for custom features
-4. **Cloud Integration**: Optional cloud backup and sync
-
----
-
-## 🚀 Release Strategy
-
-### Version 1.0 (Current)
-- ✅ Core functionality complete
-- ✅ File management and storage
-- ✅ Basic user interface
-- ✅ Docker deployment
-
-### Version 1.1 (Next)
-- 🔄 Performance optimizations
-- 🔄 Enhanced user experience
-- 🔄 Improved testing coverage
-- 🔄 Better documentation
-
-### Version 1.2 (Future)
-- 🔄 User management system
-- 🔄 Content search and discovery
-- 🔄 Advanced admin features
-- 🔄 Community features
-
-### Version 2.0 (Long-term)
-- 🔄 Plugin architecture
-- 🔄 Mobile applications
-- 🔄 Cloud integration
-- 🔄 Advanced analytics
-
----
-
-> All future development will focus on Docker-based deployment and features accessible via the web UI and API. Native/manual/OS-specific installation is no longer supported.
+There is no checked-in automated release pipeline or version-by-version delivery schedule. Application version strings do not establish that all planned functionality is complete.

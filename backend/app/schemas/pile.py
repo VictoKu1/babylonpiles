@@ -2,7 +2,8 @@
 Pydantic schemas for pile data validation
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from app.core.paths import validate_name
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
@@ -16,6 +17,11 @@ class PileBase(BaseModel):
     source_url: Optional[str] = Field(None, description="Source URL")
     source_config: Optional[Dict[str, Any]] = Field(None, description="Additional source configuration")
     tags: Optional[List[str]] = Field(None, description="List of tags")
+
+    @field_validator("name")
+    @classmethod
+    def safe_name(cls, value: str) -> str:
+        return validate_name(value)
 
 class PileCreate(PileBase):
     """Schema for creating a new pile"""
@@ -67,4 +73,4 @@ class PileSummary(BaseModel):
     active_piles: int
     downloading_piles: int
     total_size_bytes: int
-    categories: List[str] 
+    categories: List[str]

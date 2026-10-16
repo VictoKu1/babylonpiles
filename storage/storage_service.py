@@ -11,15 +11,18 @@ import time
 import uuid
 import json
 import logging
+import hmac
+import re
+import stat
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
 import subprocess
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
+from pydantic import BaseModel, Field
 import psutil
+from service_secrets import load_secret
 
 # Configure logging
 logging.basicConfig(
@@ -32,15 +35,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BabylonPiles Storage Service", version="1.0.0")
+SERVICE_KEY = load_secret(
+    "SERVICE_API_KEY",
+    Path(os.getenv("SERVICE_SECRETS_DIR", "/run/babylonpiles/secrets")) / "service.key",
+)
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", str(1024 * 1024 * 1024)))
+FILE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+
+def require_service_key(request: Request):
+    if request.url.path == "/health":
+        return
+    supplied = request.headers.get("X-Service-Key", "")
+    if not hmac.compare_digest(supplied.encode("utf-8"), SERVICE_KEY.encode("ascii")):
+        raise HTTPException(status_code=401, detail="Invalid service credentials")
+
+
+app = FastAPI(
+    title="BabylonPiles Storage Service", version="1.0.0",
+    dependencies=[Depends(require_service_key)],
+    docs_url=None, redoc_url=None, openapi_url=None,
 )
 
 
@@ -86,6 +100,16 @@ class StorageAllocation(BaseModel):
     status: str
 
 
+class AllocationRequest(BaseModel):
+    file_size: int = Field(gt=0, le=MAX_FILE_SIZE, strict=True)
+    file_id: str = Field(pattern=FILE_ID_PATTERN, min_length=1, max_length=128)
+
+
+class MigrationRequest(BaseModel):
+    chunk_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$")
+    target_drive: str = Field(pattern=r"^hdd[1-9][0-9]*$")
+
+
 class StorageManager:
     def __init__(self):
         self.drives: Dict[str, DriveInfo] = {}
@@ -94,6 +118,9 @@ class StorageManager:
         self.file_allocations: Dict[str, StorageAllocation] = {}
         self.chunk_size = int(os.getenv("CHUNK_SIZE", "104857600"))  # 100MB default
         self.max_drives = int(os.getenv("MAX_DRIVES", "10"))
+        self.max_file_size = MAX_FILE_SIZE
+        if self.chunk_size <= 0 or self.max_file_size <= 0:
+            raise ValueError("Storage size limits must be positive")
 
         # Load existing data
         self.load_metadata()
@@ -276,8 +303,59 @@ class StorageManager:
 
         return None
 
+    @staticmethod
+    def _validate_file_id(file_id: str):
+        if not isinstance(file_id, str) or not re.fullmatch(FILE_ID_PATTERN, file_id):
+            raise HTTPException(status_code=400, detail="Invalid file ID")
+
+    def _chunk_path(self, drive_id: str, chunk_id: str, stored_path: Optional[str] = None) -> Path:
+        """Reject traversal and symlinks before any chunk filesystem operation."""
+        if drive_id not in self.drives:
+            raise HTTPException(status_code=400, detail="Invalid chunk drive")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,159}", chunk_id):
+            raise HTTPException(status_code=400, detail="Invalid chunk ID")
+        root = Path(self.drives[drive_id].path)
+        if not root.is_absolute():
+            raise HTTPException(status_code=400, detail="Invalid storage root")
+        # Guard the normalized string before passing it to filesystem APIs.
+        # The separator prevents a sibling such as hdd10 from matching hdd1.
+        target_path = os.path.abspath(root / "chunks" / chunk_id)
+        if not target_path.startswith(str(root).rstrip(os.sep) + os.sep):
+            raise HTTPException(status_code=400, detail="Invalid chunk path")
+        target = Path(target_path)
+        for component in (*reversed(target.parents), target):
+            try:
+                mode = component.lstat().st_mode
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(mode) or (component != target and not stat.S_ISDIR(mode)):
+                raise HTTPException(status_code=400, detail="Storage paths cannot contain symlinks")
+            if component == target and not stat.S_ISREG(mode):
+                raise HTTPException(status_code=400, detail="Chunk path must be a regular file")
+        try:
+            target.resolve().relative_to(root.resolve(strict=True))
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid chunk path") from exc
+        if stored_path is not None:
+            stored = Path(stored_path)
+            # An exact stored path avoids accepting legacy aliases or traversal.
+            if not stored.is_absolute() or stored != target:
+                raise HTTPException(status_code=400, detail="Stored chunk path is outside its allocation")
+        return target
+
+    def _existing_chunk_path(self, chunk: ChunkInfo) -> Path:
+        self._validate_file_id(chunk.file_id)
+        if not re.fullmatch(re.escape(chunk.file_id) + r"_chunk_[0-9]+", chunk.id):
+            raise HTTPException(status_code=400, detail="Chunk does not belong to its file")
+        return self._chunk_path(chunk.drive_id, chunk.id, chunk.path)
+
     def allocate_file(self, file_size: int, file_id: str) -> StorageAllocation:
         """Allocate storage for a file across multiple drives"""
+        self._validate_file_id(file_id)
+        if type(file_size) is not int or not 0 < file_size <= self.max_file_size:
+            raise HTTPException(status_code=400, detail="Invalid file size")
+        if file_id in self.file_allocations or any(chunk.file_id == file_id for chunk in self.chunks.values()):
+            raise HTTPException(status_code=409, detail="File is already allocated")
         logger.info(f"Allocating {file_size} bytes for file {file_id}")
 
         # Split file into chunks
@@ -296,7 +374,7 @@ class StorageManager:
                 )
 
             chunk_id = f"{file_id}_chunk_{chunk_number}"
-            chunk_path = f"{self.drives[drive_id].path}/chunks/{chunk_id}"
+            chunk_path = str(self._chunk_path(drive_id, chunk_id))
 
             # Create chunk directory
             os.makedirs(os.path.dirname(chunk_path), exist_ok=True)
@@ -349,6 +427,8 @@ class StorageManager:
 
         chunk = self.chunks[chunk_id]
         source_drive = chunk.drive_id
+        self._existing_chunk_path(chunk)
+        self._chunk_path(target_drive, chunk.id)
 
         if source_drive == target_drive:
             raise HTTPException(
@@ -394,33 +474,35 @@ class StorageManager:
             migration.started_at = datetime.now().isoformat()
             self.save_metadata()
 
-            # Create target path
-            target_path = (
-                f"{self.drives[migration.target_drive].path}/chunks/{chunk.id}"
-            )
+            # Recheck persisted values in the worker immediately before access.
+            source_path = self._existing_chunk_path(chunk)
+            target_path = self._chunk_path(migration.target_drive, chunk.id)
+            if target_path.exists():
+                raise ValueError("Migration target already exists")
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
             # Copy file using rsync for efficiency
-            if os.path.exists(chunk.path):
+            if source_path.is_file():
                 result = subprocess.run(
-                    ["rsync", "-av", "--progress", chunk.path, target_path],
+                    ["rsync", "-av", "--progress", "--", str(source_path), str(target_path)],
                     capture_output=True,
                     text=True,
                 )
 
                 if result.returncode == 0:
+                    self._existing_chunk_path(chunk)
+                    self._chunk_path(migration.target_drive, chunk.id)
+                    # Remove the source before changing the chunk's stored path.
+                    source_path.unlink()
                     # Update chunk information
                     chunk.drive_id = migration.target_drive
-                    chunk.path = target_path
+                    chunk.path = str(target_path)
 
                     # Update drive usage
                     self.drives[migration.source_drive].free_space += chunk.size
                     self.drives[migration.source_drive].used_space -= chunk.size
                     self.drives[migration.target_drive].free_space -= chunk.size
                     self.drives[migration.target_drive].used_space += chunk.size
-
-                    # Remove original file
-                    os.remove(chunk.path)
 
                     migration.status = "completed"
                     migration.progress = 100.0
@@ -518,9 +600,9 @@ def get_drive(drive_id: str):
 
 
 @app.post("/allocate", response_model=StorageAllocation)
-def allocate_file(file_size: int, file_id: str):
+def allocate_file(request: AllocationRequest):
     """Allocate storage for a file"""
-    return storage_manager.allocate_file(file_size, file_id)
+    return storage_manager.allocate_file(request.file_size, request.file_id)
 
 
 @app.get("/chunks", response_model=List[ChunkInfo])
@@ -541,9 +623,9 @@ def get_chunk(chunk_id: str):
 
 
 @app.post("/migrate", response_model=MigrationTask)
-def migrate_chunk(chunk_id: str, target_drive: str):
+def migrate_chunk(request: MigrationRequest):
     """Migrate chunk to different drive"""
-    return storage_manager.migrate_chunk(chunk_id, target_drive)
+    return storage_manager.migrate_chunk(request.chunk_id, request.target_drive)
 
 
 @app.get("/migrations", response_model=List[MigrationTask])
@@ -577,10 +659,19 @@ def get_file_allocation(file_id: str):
 @app.delete("/files/{file_id}")
 def delete_file(file_id: str):
     """Delete file and free allocated storage"""
+    storage_manager._validate_file_id(file_id)
     if file_id not in storage_manager.file_allocations:
         raise HTTPException(status_code=404, detail="File allocation not found")
 
     allocation = storage_manager.file_allocations[file_id]
+    # Validate every persisted path first, avoiding partial deletion on bad data.
+    for chunk_info in allocation.chunks:
+        chunk_id = chunk_info["id"]
+        if chunk_id in storage_manager.chunks:
+            chunk = storage_manager.chunks[chunk_id]
+            if chunk.file_id != file_id:
+                raise HTTPException(status_code=400, detail="Chunk belongs to another file")
+            storage_manager._existing_chunk_path(chunk)
 
     # Delete chunks
     for chunk_info in allocation.chunks:
@@ -589,8 +680,9 @@ def delete_file(file_id: str):
             chunk = storage_manager.chunks[chunk_id]
 
             # Remove file if it exists
-            if os.path.exists(chunk.path):
-                os.remove(chunk.path)
+            chunk_path = storage_manager._existing_chunk_path(chunk)
+            if chunk_path.exists():
+                chunk_path.unlink()
 
             # Update drive usage
             drive = storage_manager.drives[chunk.drive_id]

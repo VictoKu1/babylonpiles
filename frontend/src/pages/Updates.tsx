@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const API_BASE = 'http://localhost:8080/api/v1'
+const API_BASE = '/api/v1'
 
 interface MirrorVariantCatalog {
   variant: string
@@ -77,7 +77,8 @@ function bytesToHuman(bytes: number) {
 
 function formatDate(value: string | null) {
   if (!value) return 'Not scheduled'
-  const parsed = new Date(value)
+  // Older records were serialized as naive UTC. New responses include Z/offset.
+  const parsed = new Date(/[zZ]$|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`)
   if (Number.isNaN(parsed.getTime())) return value
   return `${parsed.toLocaleDateString()} ${parsed.toLocaleTimeString()}`
 }
@@ -96,6 +97,7 @@ export function Updates() {
   const [providers, setProviders] = useState<MirrorProviderCatalog[]>([])
   const [jobs, setJobs] = useState<MirrorJob[]>([])
   const [drafts, setDrafts] = useState<Record<number, MirrorJobDraft>>({})
+  const dirtyDrafts = React.useRef(new Set<number>())
   const [logExcerpts, setLogExcerpts] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(true)
   const [savingJobId, setSavingJobId] = useState<number | null>(null)
@@ -166,7 +168,7 @@ export function Updates() {
     })
   }, [jobs])
 
-  async function loadData() {
+  async function loadData(savedJobId?: number, savedDraft?: MirrorJobDraft) {
     setLoading(true)
     try {
       const [providersResponse, jobsResponse] = await Promise.all([
@@ -184,9 +186,12 @@ export function Updates() {
 
       setProviders(providersPayload.data || [])
       setJobs(nextJobs)
-      setDrafts(
-        Object.fromEntries(nextJobs.map((job) => [job.id, buildDraft(job)]))
-      )
+      setDrafts(current => Object.fromEntries(nextJobs.map(job => {
+        const justSaved = job.id === savedJobId && current[job.id] === savedDraft
+        if (dirtyDrafts.current.has(job.id) && !justSaved) return [job.id, current[job.id]]
+        dirtyDrafts.current.delete(job.id)
+        return [job.id, buildDraft(job)]
+      })))
     } catch (error) {
       window.alert('Failed to load mirrored sources.')
     } finally {
@@ -195,6 +200,7 @@ export function Updates() {
   }
 
   function updateDraft(jobId: number, patch: Partial<MirrorJobDraft>) {
+    dirtyDrafts.current.add(jobId)
     setDrafts((current) => ({
       ...current,
       [jobId]: {
@@ -259,7 +265,7 @@ export function Updates() {
         return
       }
 
-      await loadData()
+      await loadData(jobId, draft)
     } catch {
       window.alert('Failed to save mirror job.')
     } finally {
@@ -479,9 +485,9 @@ export function Updates() {
                             schedule_frequency: event.target.value as MirrorJobDraft['schedule_frequency'],
                             schedule_day:
                               event.target.value === 'weekly'
-                                ? draft.schedule_day ?? 0
+                                ? draft.schedule_frequency === 'weekly' ? draft.schedule_day ?? 0 : 0
                                 : event.target.value === 'monthly'
-                                ? draft.schedule_day ?? 1
+                                ? draft.schedule_frequency === 'monthly' ? draft.schedule_day ?? 1 : 1
                                 : null,
                           })
                         }

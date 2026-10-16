@@ -5,16 +5,36 @@ Internal adapter that wraps vendored EmergencyStorage commands.
 import asyncio
 import os
 import subprocess
+import hmac
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from pydantic import BaseModel
+from service_secrets import load_secret
 
 
-app = FastAPI(title="BabylonPiles Mirrorer", version="1.0.0")
+SERVICE_KEY = load_secret(
+    "SERVICE_API_KEY",
+    Path(os.getenv("SERVICE_SECRETS_DIR", "/run/babylonpiles/secrets")) / "service.key",
+)
+
+
+def require_service_key(request: Request):
+    if request.url.path == "/health":
+        return
+    supplied = request.headers.get("X-Service-Key", "")
+    if not hmac.compare_digest(supplied.encode("utf-8"), SERVICE_KEY.encode("ascii")):
+        raise HTTPException(status_code=401, detail="Invalid service credentials")
+
+
+app = FastAPI(
+    title="BabylonPiles Mirrorer", version="1.0.0",
+    dependencies=[Depends(require_service_key)],
+    docs_url=None, redoc_url=None, openapi_url=None,
+)
 
 MIRROR_ROOT = Path(os.getenv("MIRROR_ROOT", "/mnt/babylonpiles/piles"))
 MIRROR_LOG_DIR = Path(os.getenv("MIRROR_LOG_DIR", "/mnt/babylonpiles/data/mirror_logs"))

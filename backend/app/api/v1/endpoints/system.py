@@ -18,10 +18,16 @@ from datetime import datetime
 import time
 import subprocess
 import platform
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from app.core.config import settings
+from app.core.paths import validate_name
+from urllib.parse import quote
 import logging
+from pydantic import BaseModel, Field, field_validator
+from uuid import uuid4
 
 router = APIRouter()
+public_router = APIRouter()
 
 # Hotspot configuration
 HOTSPOT_CONFIG = {
@@ -161,7 +167,7 @@ log-dhcp
 mode_manager: ModeManager = None
 system_manager: SystemManager = None
 
-DATA_ROOT = "/mnt/babylonpiles/data"
+DATA_ROOT = settings.data_dir
 
 # Add these global variables after the router definition
 
@@ -764,21 +770,23 @@ async def get_hotspot_status() -> Dict[str, Any]:
             detail=f"Error getting hotspot status: {str(e)}"
         )
 
-@router.get("/hotspot/public-content")
+@public_router.get("/hotspot/public-content")
 async def get_public_content() -> Dict[str, Any]:
     """Get list of public content for hotspot users"""
     try:
-        from app.api.v1.endpoints.files import DATA_ROOT, get_file_permission, get_file_metadata
+        from app.api.v1.endpoints.files import content_path, content_key, get_file_permission, get_file_metadata
         
         public_files = []
         
-        def scan_directory(path: str, relative_path: str = ""):
+        def scan_directory(path: str = ""):
             try:
-                for entry in os.scandir(os.path.join(DATA_ROOT, path)):
-                    if entry.name in [".permissions.json", ".metadata.json"]:
+                for entry in os.scandir(content_path(path, allow_root=True)):
+                    if entry.is_symlink():
                         continue
-                    
-                    item_path = os.path.join(relative_path, entry.name) if relative_path else entry.name
+                    try:
+                        item_path = content_key(f"{path}/{entry.name}" if path else entry.name)
+                    except HTTPException:
+                        continue
                     
                     # Check if item is public
                     if get_file_permission(item_path):
@@ -793,12 +801,12 @@ async def get_public_content() -> Dict[str, Any]:
                             "size_formatted": format_file_size(stat.st_size) if not entry.is_dir() else "0 B",
                             "creator": metadata.get("creator", "admin"),
                             "created_at": metadata.get("created_at", datetime.fromtimestamp(stat.st_ctime).isoformat()),
-                            "download_url": f"/api/v1/hotspot/download/{item_path}" if not entry.is_dir() else None
+                            "download_url": f"/api/v1/system/hotspot/download/{quote(item_path, safe='/')}" if not entry.is_dir() else None
                         })
                     
                     # Recursively scan subdirectories
                     if entry.is_dir():
-                        scan_directory(os.path.join(path, entry.name), item_path)
+                        scan_directory(item_path)
                         
             except Exception as e:
                 print(f"Error scanning directory {path}: {e}")
@@ -820,57 +828,39 @@ async def get_public_content() -> Dict[str, Any]:
             detail=f"Error getting public content: {str(e)}"
         )
 
-@router.get("/hotspot/download/{file_path:path}")
+@public_router.get("/hotspot/download/{file_path:path}")
 async def download_public_file(file_path: str):
-    """Download a public file (for hotspot users)"""
-    try:
-        from app.api.v1.endpoints.files import DATA_ROOT, get_file_permission
-        
-        # Check if file is public
-        if not get_file_permission(file_path):
-            raise HTTPException(
-                status_code=403,
-                detail="File is not public"
-            )
-        
-        full_path = os.path.join(DATA_ROOT, file_path)
-        if not os.path.exists(full_path) or not os.path.isfile(full_path):
-            raise HTTPException(
-                status_code=404,
-                detail="File not found"
-            )
-        
-        return FileResponse(
-            full_path,
-            filename=os.path.basename(full_path),
-            media_type='application/octet-stream'
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error downloading file: {str(e)}"
-        )
+    """Serve only the exact file object explicitly published by an administrator."""
+    from app.api.v1.endpoints.files import public_file_response
+    return public_file_response(file_path)
 
-@router.post("/hotspot/request-upload")
-async def request_content_upload(
-    filename: str,
-    editor_name: str,
-    client_ip: str = None,
-    client_mac: str = None
-) -> Dict[str, Any]:
-    """Request content upload (for hotspot users)"""
+
+class UploadRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    editor_name: str = Field(min_length=1, max_length=200)
+    client_ip: str | None = Field(default=None, max_length=64)
+    client_mac: str | None = Field(default=None, max_length=64)
+
+    @field_validator("filename")
+    @classmethod
+    def safe_filename(cls, value):
+        return validate_name(value)
+
+
+@public_router.post("/hotspot/request-upload")
+async def request_content_upload(body: UploadRequest) -> Dict[str, Any]:
+    """Accept the public form's bounded JSON request for administrator review."""
+    if len(hotspot_status["pending_requests"]) >= 1000:
+        raise HTTPException(status_code=429, detail="Upload request queue is full; please try later")
     try:
-        request_id = f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        request_id = f"req_{uuid4().hex}"
         
         request_data = {
             "id": request_id,
-            "filename": filename,
-            "editor_name": editor_name,
-            "client_ip": client_ip,
-            "client_mac": client_mac,
+            "filename": body.filename,
+            "editor_name": body.editor_name,
+            "client_ip": body.client_ip,
+            "client_mac": body.client_mac,
             "requested_at": datetime.now().isoformat(),
             "status": "pending"
         }

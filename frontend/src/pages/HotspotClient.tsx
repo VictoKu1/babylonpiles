@@ -36,6 +36,7 @@ export function HotspotClient() {
   const loadPublicContent = async () => {
     try {
       setLoading(true);
+      setError(null);
       const response = await fetch('/api/v1/system/hotspot/public-content');
       
       if (response.ok) {
@@ -91,14 +92,12 @@ export function HotspotClient() {
         body: JSON.stringify({
           filename: formData.filename,
           editor_name: formData.editor_name,
-          client_ip: '192.168.4.100', // Simplified for demo
-          client_mac: '00:11:22:33:44:55' // Simplified for demo
         }),
       });
 
       if (response.ok) {
         const result = await response.json();
-        setUploadRequest(result.data);
+        setUploadRequest({ ...result.data, ...formData });
         setShowUploadForm(false);
         setFormData({ filename: '', editor_name: '' });
       } else {
@@ -335,4 +334,4 @@ export function HotspotClient() {
       )}
     </div>
   );
-} 
+}

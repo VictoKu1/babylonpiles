@@ -6,6 +6,9 @@ import asyncio
 import logging
 import psutil
 import os
+import socket
+import stat
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -14,6 +17,25 @@ from app.core.database import AsyncSessionLocal
 from app.models.system_status import SystemStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _content_bytes(root: Path, seen: set) -> int:
+    """Count regular files once across content roots, without following links."""
+    if root.is_symlink():
+        return 0
+    total = 0
+    for directory, _, filenames in os.walk(root, followlinks=False):
+        for filename in filenames:
+            try:
+                info = (Path(directory) / filename).lstat()
+            except OSError:
+                # A download may be removed while storage is being measured.
+                continue
+            identity = (info.st_dev, info.st_ino)
+            if stat.S_ISREG(info.st_mode) and identity not in seen:
+                seen.add(identity)
+                total += info.st_size
+    return total
 
 
 class SystemManager:
@@ -112,68 +134,42 @@ class SystemManager:
             logger.error(f"Error updating system status: {e}")
 
     async def _get_storage_info(self) -> Dict[str, Any]:
-        """Get storage information"""
+        """Measure content and the distinct filesystems backing configured roots."""
         try:
-            # Check main data directory
-            data_path = Path(settings.data_dir)
+            roots = [Path(settings.data_dir), Path(settings.piles_dir)]
+            total_bytes = available_bytes = 0
+            seen_filesystems = set()
+            for root in roots:
+                path = root.absolute()
+                # A not-yet-created content directory uses its nearest existing
+                # parent's filesystem. Do not create directories while probing.
+                while True:
+                    try:
+                        device = path.stat().st_dev
+                        break
+                    except FileNotFoundError:
+                        if path.parent == path:
+                            raise
+                        path = path.parent
+                if device in seen_filesystems:
+                    continue
+                disk_usage = psutil.disk_usage(str(path))
+                seen_filesystems.add(device)
+                total_bytes += disk_usage.total
+                available_bytes += disk_usage.free
 
-            # Check if the data directory exists and has actual content
-            if not data_path.exists():
-                # Return zero storage when no data directory exists
-                return {
-                    "total_bytes": 0,
-                    "used_bytes": 0,
-                    "available_bytes": 0,
-                    "usage_percent": 0,
-                    "no_storage_allocated": True,
-                }
-
-            # Check if the directory is empty or only contains system files
-            try:
-                contents = list(data_path.iterdir())
-                # If directory is empty or only contains hidden/system files, consider it as no storage allocated
-                if not contents or all(item.name.startswith(".") for item in contents):
-                    return {
-                        "total_bytes": 0,
-                        "used_bytes": 0,
-                        "available_bytes": 0,
-                        "usage_percent": 0,
-                        "no_storage_allocated": True,
-                    }
-            except (PermissionError, OSError):
-                # If we can't read the directory, assume no storage allocated
-                return {
-                    "total_bytes": 0,
-                    "used_bytes": 0,
-                    "available_bytes": 0,
-                    "usage_percent": 0,
-                    "no_storage_allocated": True,
-                }
-
-            # Get disk usage
-            disk_usage = psutil.disk_usage(str(data_path))
-
-            # Calculate actual used space (excluding system files)
+            seen_files = set()
             actual_used = 0
-            try:
-                for root, dirs, files in os.walk(str(data_path)):
-                    for file in files:
-                        try:
-                            file_path = os.path.join(root, file)
-                            if os.path.exists(file_path):
-                                actual_used += os.path.getsize(file_path)
-                        except (OSError, PermissionError):
-                            continue
-            except (OSError, PermissionError):
-                actual_used = disk_usage.used
+            for root in roots:
+                actual_used += await asyncio.to_thread(_content_bytes, root, seen_files)
 
             return {
-                "total_bytes": disk_usage.total,
+                "total_bytes": total_bytes,
                 "used_bytes": actual_used,
-                "available_bytes": disk_usage.free,
+                "available_bytes": available_bytes,
                 "usage_percent": (
-                    (actual_used / disk_usage.total) * 100
-                    if disk_usage.total > 0
+                    (actual_used / total_bytes) * 100
+                    if total_bytes > 0
                     else 0
                 ),
                 "no_storage_allocated": actual_used == 0,
@@ -254,13 +250,13 @@ class SystemManager:
         """Get system information"""
         try:
             return {
-                "platform": psutil.sys.platform,
-                "python_version": psutil.sys.version,
+                "platform": sys.platform,
+                "python_version": sys.version,
                 "cpu_count": psutil.cpu_count(),
                 "cpu_freq": psutil.cpu_freq()._asdict() if psutil.cpu_freq() else None,
                 "memory_total": psutil.virtual_memory().total,
                 "boot_time": datetime.fromtimestamp(psutil.boot_time()).isoformat(),
-                "hostname": psutil.sys.gethostname(),
+                "hostname": socket.gethostname(),
                 "pid": os.getpid(),
             }
         except Exception as e:
@@ -285,13 +281,17 @@ class SystemManager:
         try:
             storage_info = await self._get_storage_info()
 
-            # Get directory sizes
-            piles_dir = Path(settings.piles_dir)
-            if piles_dir.exists():
-                piles_size = sum(
-                    f.stat().st_size for f in piles_dir.rglob("*") if f.is_file()
-                )
-                storage_info["piles_size_bytes"] = piles_size
+            # The dashboard needs one total for files and downloaded piles.
+            # Shared roots, nested directories and hard links must not add twice.
+            seen = set()
+            piles_size = await asyncio.to_thread(
+                _content_bytes, Path(settings.piles_dir), seen
+            )
+            data_size = await asyncio.to_thread(
+                _content_bytes, Path(settings.data_dir), seen
+            )
+            storage_info["piles_size_bytes"] = piles_size
+            storage_info["content_size_bytes"] = piles_size + data_size
 
             return storage_info
         except Exception as e:

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { SourceInfo, SourceMetadata } from '../components/SourceInfo';
 
 interface Pile {
   id?: number;
@@ -14,124 +15,6 @@ interface Pile {
   is_downloading?: boolean;
   download_progress?: number;
 }
-
-interface QuickAddSource {
-  id: string;
-  name: string;
-  display_name: string;
-  description: string;
-  category: string;
-  source_type: "kiwix" | "http" | "torrent";
-  source_url: string;
-  tags: string[];
-  size?: string;
-  difficulty: "easy" | "moderate" | "advanced";
-}
-
-interface GutenbergBook {
-  id: number;
-  title: string;
-  authors: { name: string }[];
-  subjects: string[];
-  formats: Record<string, string>;
-  download_count: number;
-}
-
-const QUICK_ADD_SOURCES: QuickAddSource[] = [
-  // Lightweight/Moderate-Size Sources
-  {
-    id: "wikipedia_en_all",
-    name: "wikipedia_en_all",
-    display_name: "Wikipedia English (Complete)",
-    description:
-      "Complete English Wikipedia with all articles and images. Essential offline knowledge base.",
-    category: "education",
-    source_type: "kiwix",
-    source_url: "https://download.kiwix.org/zim/wikipedia_en_all.zim",
-    tags: ["wikipedia", "education", "knowledge", "offline"],
-    size: "~80 GB",
-    difficulty: "moderate",
-  },
-  {
-    id: "wikipedia_en_medical",
-    name: "wikipedia_en_medical",
-    display_name: "WikiMed (Medical Wikipedia)",
-    description:
-      "Medical articles subset of Wikipedia. Ideal for health and emergency medicine.",
-    category: "medical",
-    source_type: "kiwix",
-    source_url: "https://download.kiwix.org/zim/wikipedia_en_medicine.zim",
-    tags: ["medical", "health", "emergency", "wikipedia"],
-    size: "~75k pages",
-    difficulty: "easy",
-  },
-  {
-    id: "gutenberg_en_all",
-    name: "gutenberg_en_all",
-    display_name: "Project Gutenberg Books",
-    description:
-      "~60k public-domain eBooks including literature, science, and history classics.",
-    category: "books",
-    source_type: "kiwix",
-    source_url: "https://download.kiwix.org/zim/gutenberg_en_all.zim",
-    tags: ["books", "literature", "classics", "public-domain"],
-    size: "~30-40 GB",
-    difficulty: "moderate",
-  },
-  {
-    id: "wikipedia_en_simple",
-    name: "wikipedia_en_simple",
-    display_name: "Wikipedia Simple English",
-    description:
-      "Simplified English Wikipedia with easier language for learning and basic reference.",
-    category: "education",
-    source_type: "kiwix",
-    source_url: "https://download.kiwix.org/zim/wikipedia_en_simple_all.zim",
-    tags: ["wikipedia", "simple", "learning", "basic"],
-    size: "~1 GB",
-    difficulty: "easy",
-  },
-  {
-    id: "wiktionary_en_all",
-    name: "wiktionary_en_all",
-    display_name: "Wiktionary English Dictionary",
-    description:
-      "Complete English dictionary and thesaurus with definitions, pronunciations, and etymology.",
-    category: "education",
-    source_type: "kiwix",
-    source_url: "https://download.kiwix.org/zim/wiktionary_en_all.zim",
-    tags: ["dictionary", "language", "reference", "definitions"],
-    size: "~2 GB",
-    difficulty: "easy",
-  },
-  {
-    id: "wikivoyage_en_all",
-    name: "wikivoyage_en_all",
-    display_name: "Wikivoyage Travel Guide",
-    description:
-      "Comprehensive travel guides for destinations worldwide with maps and practical information.",
-    category: "travel",
-    source_type: "kiwix",
-    source_url: "https://download.kiwix.org/zim/wikivoyage_en_all.zim",
-    tags: ["travel", "guides", "maps", "destinations"],
-    size: "~1 GB",
-    difficulty: "easy",
-  },
-  // Test with a smaller, reliable file
-  {
-    id: "test_small_file",
-    name: "test_small_file",
-    display_name: "Test Small File",
-    description:
-      "A small test file to verify download functionality works correctly.",
-    category: "general",
-    source_type: "http",
-    source_url: "https://httpbin.org/bytes/1024",
-    tags: ["test", "small", "verification"],
-    size: "~1 KB",
-    difficulty: "easy",
-  },
-];
 
 // --- KiwixTreeBrowser Component ---
 interface KiwixNode {
@@ -157,16 +40,18 @@ function formatFileSize(bytes: number | null | undefined) {
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 
-function flattenSelected(node: KiwixNode, selected: Record<string, boolean>): KiwixNode[] {
-  if (!node.is_dir && selected[node.url]) return [node];
-  if (node.is_dir && selected[node.url]) {
-    // If folder is selected, all children are implicitly selected
-    return node.children?.flatMap(child => flattenSelected(child, selected)) || [];
+async function responseJson(response: Response) {
+  const payload = await response.json();
+  if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : `Request failed (${response.status})`);
+  return payload;
+}
+
+async function browseSource(url: string, descriptionUrl = '', signal?: AbortSignal): Promise<KiwixNode[]> {
+  const payload = await responseJson(await fetch(`/api/v1/piles/browse-source?url=${encodeURIComponent(url)}&description_url=${encodeURIComponent(descriptionUrl)}`, { signal }));
+  if (!Array.isArray(payload.items) || !payload.items.every((item: KiwixNode) => item && typeof item.name === 'string' && typeof item.url === 'string' && typeof item.is_dir === 'boolean')) {
+    throw new Error('Invalid directory response');
   }
-  if (node.is_dir) {
-    return node.children?.flatMap(child => flattenSelected(child, selected)) || [];
-  }
-  return [];
+  return payload.items;
 }
 
 // Helper to sum sizes recursively
@@ -186,17 +71,13 @@ function getFolderSize(node: KiwixNode): number | null {
 }
 
 // Helper to get indeterminate state
-function isIndeterminate(node: KiwixNode, selected: Record<string, boolean>): boolean {
-  if (!node.is_dir || !node.children) return false;
-  let checked = 0, unchecked = 0;
-  for (const child of node.children) {
-    if (child.is_dir && child.children) {
-      if (isIndeterminate(child, selected)) return true;
-    }
-    if (selected[child.url]) checked++;
-    else unchecked++;
-  }
-  return checked > 0 && unchecked > 0;
+function selectionState(node: KiwixNode, selected: Record<string, boolean>, inherited = false): 'checked' | 'unchecked' | 'mixed' {
+  const active = selected[node.url] ?? inherited;
+  if (!node.is_dir || !node.children?.length) return active ? 'checked' : 'unchecked';
+  const children = node.children.map(child => selectionState(child, selected, active));
+  if (children.every(state => state === 'checked')) return 'checked';
+  if (children.every(state => state === 'unchecked')) return 'unchecked';
+  return 'mixed';
 }
 
 function TreeCheckbox({
@@ -224,7 +105,7 @@ function TreeCheckbox({
 }
 
 const KiwixTreeBrowser: React.FC<{
-  onDownload: (files: KiwixNode[]) => void;
+  onDownload: (files: KiwixNode[]) => Promise<void>;
 }> = ({ onDownload }) => {
   const [sources, setSources] = useState<{ [name: string]: [string, string] }>({});
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
@@ -239,7 +120,9 @@ const KiwixTreeBrowser: React.FC<{
   const [modalFiles, setModalFiles] = useState<KiwixNode[]>([]);
   const [searchText, setSearchText] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [infoModalHtml, setInfoModalHtml] = useState<string | null>(null);
+  const [infoMetadata, setInfoMetadata] = useState<SourceMetadata | null>(null);
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [infoError, setInfoError] = useState('');
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [manualModalOpen, setManualModalOpen] = useState(false);
@@ -248,70 +131,99 @@ const KiwixTreeBrowser: React.FC<{
   const [manualInfoUrl, setManualInfoUrl] = useState('');
   const [manualNoInfo, setManualNoInfo] = useState(false);
   const [manualError, setManualError] = useState('');
+  const [browserError, setBrowserError] = useState('');
+  const [sourceError, setSourceError] = useState('');
+  const [folderErrors, setFolderErrors] = useState<Record<string, string>>({});
+  const [retry, setRetry] = useState(0);
+  const [preparing, setPreparing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const controllerRef = React.useRef<AbortController | null>(null);
+  const inFlight = React.useRef(new WeakMap<KiwixNode, Promise<void>>());
 
   useEffect(() => {
-    fetch("http://localhost:8080/api/v1/piles/sources-list")
-      .then(res => res.json())
-      .then(data => setSources(data));
-  }, []);
+    const controller = new AbortController();
+    setSourceError('');
+    fetch("/api/v1/piles/sources-list", { signal: controller.signal })
+      .then(responseJson)
+      .then(data => { if (!controller.signal.aborted) setSources(data); })
+      .catch(error => { if (!controller.signal.aborted) setSourceError(error instanceof Error ? error.message : 'Unable to load sources'); });
+    return () => controller.abort();
+  }, [retry]);
 
   useEffect(() => {
-    if (!selectedSource || !sources[selectedSource]) return;
+    if (!selectedSource || !sources[selectedSource]) {
+      setSelectedRepoUrl(null);
+      setSelectedDescUrl(null);
+      return;
+    }
     setSelectedRepoUrl(sources[selectedSource][0]);
     setSelectedDescUrl(sources[selectedSource][1]);
   }, [selectedSource, sources]);
 
+  const loadChildren = React.useCallback((node: KiwixNode): Promise<void> => {
+    if (node.loaded) return Promise.resolve();
+    const existing = inFlight.current.get(node);
+    if (existing) return existing;
+    const signal = controllerRef.current?.signal;
+    const operation = (async () => {
+      setLoadingFolders(prev => ({ ...prev, [node.url]: true }));
+      try {
+        const children = await browseSource(node.url, '', signal);
+        if (signal?.aborted) return;
+        node.children = children;
+        node.loaded = true;
+        setFolderErrors(prev => ({ ...prev, [node.url]: '' }));
+        setRoot(current => [...current]);
+      } catch (error) {
+        if (!signal?.aborted) setFolderErrors(prev => ({ ...prev, [node.url]: error instanceof Error ? error.message : 'Unable to load folder' }));
+        throw error;
+      } finally {
+        inFlight.current.delete(node);
+        if (!signal?.aborted) setLoadingFolders(prev => ({ ...prev, [node.url]: false }));
+      }
+    })();
+    inFlight.current.set(node, operation);
+    return operation;
+  }, []);
+
   useEffect(() => {
-    if (!selectedRepoUrl) return;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setRoot([]); setSelected({}); setExpanded({}); setFolderErrors({}); setLoadingFolders({});
+    setBrowserError(''); setShowModal(false);
+    if (!selectedRepoUrl) { setLoading(false); return () => controller.abort(); }
     setLoading(true);
-    fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(selectedRepoUrl)}&description_url=${encodeURIComponent(selectedDescUrl || '')}`)
-      .then(res => res.json())
-      .then(data => setRoot(data.items))
-      .finally(() => setLoading(false));
-  }, [selectedRepoUrl, selectedDescUrl]);
-
-  // Prefetch children recursively in the background
-  async function prefetchChildren(node: KiwixNode, updateNode: (n: KiwixNode) => void) {
-    if (!node.is_dir || node.loaded) return;
-    // Mark as loading
-    updateNode({ ...node, loading: true });
-    const res = await fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
-    const data = await res.json();
-    node.children = data.items;
-    node.loaded = true;
-    updateNode({ ...node, children: node.children, loaded: true, loading: false });
-    // Recursively prefetch children
-    for (const child of node.children) {
-      prefetchChildren(child, updateNode);
+    async function load() {
+      try {
+        const items = await browseSource(selectedRepoUrl!, selectedDescUrl || '', controller.signal);
+        if (controller.signal.aborted) return;
+        setRoot(items);
+        setLoading(false);
+        // Visit directories sequentially so large catalogs do not flood the API.
+        const visited = new Set<string>();
+        async function prefetch(nodes: KiwixNode[]) {
+          for (const node of nodes) {
+            if (controller.signal.aborted) return;
+            if (!node.is_dir || visited.has(node.url)) continue;
+            visited.add(node.url);
+            try { await loadChildren(node); await prefetch(node.children || []); } catch { /* Each failed folder exposes its own retry action. */ }
+          }
+        }
+        await prefetch(items);
+      } catch (error) {
+        if (!controller.signal.aborted) setBrowserError(error instanceof Error ? error.message : 'Unable to load directory');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
     }
-  }
-
-  useEffect(() => {
-    if (!root.length) return;
-    // Helper to update a node in the root tree by reference
-    const updateNode = (updated: KiwixNode) => {
-      setRoot(r => [...r]);
-    };
-    for (const node of root) {
-      prefetchChildren(node, updateNode);
-    }
-    // eslint-disable-next-line
-  }, [root.length]);
-
-  const loadChildren = async (node: KiwixNode) => {
-    setLoadingFolders(prev => ({ ...prev, [node.url]: true }));
-    const res = await fetch(`http://localhost:8080/api/v1/piles/browse-source?url=${encodeURIComponent(node.url)}`);
-    const data = await res.json();
-    node.children = data.items;
-    node.loaded = true;
-    setLoadingFolders(prev => ({ ...prev, [node.url]: false }));
-    setRoot(r => [...r]);
-  };
+    void load();
+    return () => controller.abort();
+  }, [selectedRepoUrl, selectedDescUrl, retry, loadChildren]);
 
   const toggleExpand = async (node: KiwixNode) => {
     setExpanded(prev => ({ ...prev, [node.url]: !prev[node.url] }));
     if (node.is_dir && !node.loaded && !loadingFolders[node.url]) {
-      await loadChildren(node);
+      try { await loadChildren(node); } catch { /* The folder displays the error. */ }
     }
   };
 
@@ -327,17 +239,6 @@ const KiwixTreeBrowser: React.FC<{
     };
     setSelected(prev => ({ ...prev, ...update(node, checked) }));
   };
-
-  function flattenSelected(node: KiwixNode, selected: Record<string, boolean>): KiwixNode[] {
-    if (!node.is_dir && selected[node.url]) return [node];
-    if (node.is_dir && selected[node.url] && node.children) {
-      return node.children.flatMap(child => flattenSelected(child, selected));
-    }
-    if (node.is_dir && node.children) {
-      return node.children.flatMap(child => flattenSelected(child, selected));
-    }
-    return [];
-  }
 
   // Helper to extract field values from file names
   function extractFieldValues(nodes: KiwixNode[], maxFields = 5): Record<string, Set<string>> {
@@ -361,8 +262,9 @@ const KiwixTreeBrowser: React.FC<{
 
   // Helper to filter files by selected field values
   function fileMatchesFilters(node: KiwixNode, filters: Record<string, string | null>, maxFields = 5, searchText = ''): boolean {
+    if (node.is_dir && !searchText && !Object.values(filters).some(Boolean)) return true;
+    if (node.is_dir) return !node.loaded || !!node.children?.some(child => fileMatchesFilters(child, filters, maxFields, searchText)) || (!!searchText && node.name.toLowerCase().includes(searchText.toLowerCase()));
     if (searchText && !node.name.toLowerCase().includes(searchText.toLowerCase())) return false;
-    if (node.is_dir) return true;
     if (!node.name.endsWith('.zim')) return true;
     const parts = node.name.replace('.zim', '').split('_');
     for (let i = 0; i < maxFields; i++) {
@@ -374,9 +276,9 @@ const KiwixTreeBrowser: React.FC<{
 
   const [filters, setFilters] = useState<Record<string, string | null>>({});
   const maxFields = 5;
-  const fieldValues = React.useMemo(() => extractFieldValues(root, maxFields), [root]);
 
-  const renderNode = (node: KiwixNode, depth = 0): JSX.Element | null => {
+
+  const renderNode = (node: KiwixNode, depth = 0, inherited = false): JSX.Element | null => {
     // If this is a folder, check if any children match the filters/search
     let visibleChildren: KiwixNode[] = [];
     if (node.is_dir && node.children) {
@@ -389,7 +291,8 @@ const KiwixTreeBrowser: React.FC<{
       // If file doesn't match, don't render it
       return null;
     }
-    const indeterminate = isIndeterminate(node, selected);
+    const active = selected[node.url] ?? inherited;
+    const selection = selectionState(node, selected, inherited);
     const size = node.is_dir ? getFolderSize(node) : node.size;
     return (
       <div key={node.url} style={{ marginLeft: depth * 16 }}>
@@ -405,8 +308,8 @@ const KiwixTreeBrowser: React.FC<{
             <span style={{ width: 16, display: 'inline-block' }}></span>
           )}
           <TreeCheckbox
-            checked={!!selected[node.url]}
-            indeterminate={indeterminate}
+            checked={selection === 'checked'}
+            indeterminate={selection === 'mixed'}
             onChange={e => toggleSelect(node, e.target.checked)}
           />
           <span style={{ fontWeight: node.is_dir ? 600 : undefined }}>
@@ -449,23 +352,40 @@ const KiwixTreeBrowser: React.FC<{
               </select>
             ));
           })()}
-          {node.is_dir && node.loading && (
+          {node.is_dir && loadingFolders[node.url] && (
             <span style={{ marginLeft: 8, color: '#888', fontSize: 12 }}>(calculating...)</span>
           )}
+          {folderErrors[node.url] && <span role="alert" className="ml-2 text-red-600 text-xs">{folderErrors[node.url]} <button onClick={() => void loadChildren(node).catch(() => {})} className="underline">Retry folder</button></span>}
         </div>
-        {node.is_dir && expanded[node.url] && visibleChildren.length > 0 && (
+        {node.is_dir && (expanded[node.url] || !!searchText) && visibleChildren.length > 0 && (
           <div>
-            {visibleChildren.map(child => renderNode(child, depth + 1))}
+            {visibleChildren.map(child => renderNode(child, depth + 1, active))}
           </div>
         )}
       </div>
     );
   };
 
-  const handleDownloadClick = () => {
-    const files = root.flatMap(node => flattenSelected(node, selected));
-    setModalFiles(files);
-    setShowModal(true);
+  const handleDownloadClick = async () => {
+    setPreparing(true); setBrowserError('');
+    const files = new Map<string, KiwixNode>();
+    const visited = new Set<string>();
+    const signal = controllerRef.current?.signal;
+    async function collect(node: KiwixNode, inherited = false): Promise<void> {
+      if (signal?.aborted) return;
+      const active = selected[node.url] ?? inherited;
+      if (!node.is_dir) { if (active) files.set(node.url, node); return; }
+      if (visited.has(node.url)) return;
+      visited.add(node.url);
+      if (active) await loadChildren(node);
+      for (const child of node.children || []) await collect(child, active);
+    }
+    try {
+      for (const node of root) await collect(node);
+      if (!signal?.aborted) { setModalFiles([...files.values()]); setShowModal(true); }
+    } catch (error) {
+      if (!signal?.aborted) setBrowserError(error instanceof Error ? error.message : 'Unable to prepare selected files');
+    } finally { setPreparing(false); }
   };
 
   const totalSize = modalFiles.reduce((sum, f) => sum + (f.size || 0), 0);
@@ -491,55 +411,31 @@ const KiwixTreeBrowser: React.FC<{
     if (!selectedDescUrl) return;
     const baseFilename = getBaseFilename(filename);
     setInfoModalTitle(filename);
-    setInfoModalHtml('<div>Loading...</div>');
+    setInfoMetadata(null);
+    setInfoError('');
+    setInfoLoading(true);
     setInfoModalOpen(true);
-    const url = `http://localhost:8080/api/v1/piles/file-info?filename=${encodeURIComponent(baseFilename)}&description_url=${encodeURIComponent(selectedDescUrl)}`;
+    const url = `/api/v1/piles/file-info?filename=${encodeURIComponent(baseFilename)}&description_url=${encodeURIComponent(selectedDescUrl)}`;
     try {
       const resp = await fetch(url);
-      const html = await resp.text();
-      let infoFields = null;
-      try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const book = doc.querySelector('book');
-        if (book) {
-          infoFields = {
-            title: book.getAttribute('title') || '',
-            description: book.getAttribute('description') || '',
-            language: book.getAttribute('language') || '',
-            creator: book.getAttribute('creator') || '',
-            publisher: book.getAttribute('publisher') || '',
-          };
-        }
-      } catch (e) {
-        // Parsing failed, infoFields remains null
-      }
-      // Only set the modal content after loading is done
-      if (infoFields) {
-        setInfoModalHtml(`
-          <div style='line-height:1.7'>
-            <div><b>Title:</b> ${infoFields.title}</div>
-            <div><b>Description:</b> ${infoFields.description}</div>
-            <div><b>Language:</b> ${infoFields.language}</div>
-            <div><b>Creator:</b> ${infoFields.creator}</div>
-            <div><b>Publisher:</b> ${infoFields.publisher}</div>
-          </div>
-        `);
-      } else {
-        setInfoModalHtml(`<div style='color:red'>No info found or failed to render info.</div>`);
-      }
+      if (!resp.ok) throw new Error('Unable to load source information.');
+      setInfoMetadata(await resp.json());
     } catch (e) {
-      setInfoModalHtml(`<div style='color:red'>No info found or failed to render info.</div>`);
+      setInfoError('Unable to load source information.');
+    } finally {
+      setInfoLoading(false);
     }
   }
 
   return (
     <div className="bg-white rounded-lg shadow p-6 mb-6">
       <h2 className="text-lg font-medium text-gray-900 mb-4">Browse Content Source</h2>
+      {(sourceError || browserError) && <div role="alert" className="mb-3 text-red-600">{sourceError || browserError} <button onClick={() => setRetry(value => value + 1)} className="underline">Retry</button></div>}
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-1">Select Source</label>
         <select
           value={selectedSource || ""}
+          disabled={preparing || downloading}
           onChange={e => {
             if (e.target.value === '__manual__') {
               setManualModalOpen(true);
@@ -566,8 +462,8 @@ const KiwixTreeBrowser: React.FC<{
       {root.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
           <TreeCheckbox
-            checked={getAllRootUrls(root).every(url => selected[url])}
-            indeterminate={getAllRootUrls(root).some(url => selected[url]) && !getAllRootUrls(root).every(url => selected[url])}
+            checked={root.every(node => selectionState(node, selected) === 'checked')}
+            indeterminate={root.some(node => selectionState(node, selected) !== 'unchecked') && !root.every(node => selectionState(node, selected) === 'checked')}
             onChange={e => {
               const allUrls = getAllRootUrls(root);
               const updates: Record<string, boolean> = {};
@@ -606,9 +502,9 @@ const KiwixTreeBrowser: React.FC<{
       <button
         className="mt-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
         onClick={handleDownloadClick}
-        disabled={!root || Object.values(selected).every(v => !v) || !selectedSource}
+        disabled={preparing || downloading || loading || Object.values(selected).every(v => !v) || !selectedSource}
       >
-        Download Selected
+        {preparing ? 'Preparing selected files...' : downloading ? 'Downloading selected files...' : 'Download Selected'}
       </button>
       {showModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
@@ -626,9 +522,11 @@ const KiwixTreeBrowser: React.FC<{
             <div className="flex gap-2 mt-4">
               <button
                 className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                onClick={() => {
+                disabled={downloading || !modalFiles.length}
+                onClick={async () => {
                   setShowModal(false);
-                  onDownload(modalFiles);
+                  setDownloading(true);
+                  try { await onDownload(modalFiles); } finally { setDownloading(false); }
                 }}
               >
                 Confirm Download
@@ -650,7 +548,7 @@ const KiwixTreeBrowser: React.FC<{
               <span style={{ fontWeight: 600, fontSize: 18 }}>{infoModalTitle}</span>
               <button onClick={() => setInfoModalOpen(false)} style={{ fontSize: 20, background: 'none', border: 'none', cursor: 'pointer' }}>✖️</button>
             </div>
-            {infoModalHtml === '<div>Loading...</div>' ? (
+            {infoLoading ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 40 }}>
                 <span style={{ display: 'inline-block', width: 24, height: 24 }}>
                   <svg style={{ display: 'block' }} width="24" height="24" viewBox="0 0 50 50">
@@ -662,7 +560,7 @@ const KiwixTreeBrowser: React.FC<{
                 <span>Loading...</span>
               </div>
             ) : (
-              <div dangerouslySetInnerHTML={{ __html: infoModalHtml || '<div style=\'color:red\'>No info found or failed to render info.</div>' }} />
+              infoError ? <p role="alert" className="text-red-700">{infoError}</p> : <SourceInfo info={infoMetadata} />
             )}
           </div>
         </div>
@@ -690,7 +588,7 @@ const KiwixTreeBrowser: React.FC<{
                 if (!manualName || !manualRepoUrl) { setManualError('Name and Repository URL are required.'); return; }
                 setManualError('');
                 // POST to backend
-                const resp = await fetch('http://localhost:8080/api/v1/piles/add-source', {
+                const resp = await fetch('/api/v1/piles/add-source', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ name: manualName, repo_url: manualRepoUrl, info_url: manualNoInfo ? null : manualInfoUrl })
@@ -717,6 +615,7 @@ export function Piles() {
   const [piles, setPiles] = useState<Pile[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddResult, setQuickAddResult] = useState<{ downloaded: number; failures: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<
     "all" | "downloaded" | "downloading" | "pending"
@@ -730,14 +629,6 @@ export function Piles() {
     source_url: "",
     tags: [],
   });
-  const [validationStatus, setValidationStatus] = useState<
-    Record<string, { valid: boolean; message: string; checking: boolean }>
-  >({});
-  const [showGutenberg, setShowGutenberg] = useState(false);
-  const [gutenbergQuery, setGutenbergQuery] = useState("");
-  const [gutenbergResults, setGutenbergResults] = useState<GutenbergBook[]>([]);
-  const [gutenbergLoading, setGutenbergLoading] = useState(false);
-
   const handleAddPile = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -749,7 +640,7 @@ export function Piles() {
       formData.append("url", newPile.source_url);
 
       const validationResponse = await fetch(
-        "http://localhost:8080/api/v1/piles/validate-url",
+        "/api/v1/piles/validate-url",
         {
           method: "POST",
           body: formData,
@@ -785,7 +676,7 @@ export function Piles() {
     }
 
     try {
-      const response = await fetch("http://localhost:8080/api/v1/piles/", {
+      const response = await fetch("/api/v1/piles/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -823,87 +714,6 @@ export function Piles() {
     }
   };
 
-  const handleQuickAdd = async (source: QuickAddSource) => {
-    console.log("Quick adding source:", source);
-
-    // First validate the URL
-    try {
-      const formData = new FormData();
-      formData.append("url", source.source_url);
-
-      const validationResponse = await fetch(
-        "http://localhost:8080/api/v1/piles/validate-url",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      if (validationResponse.ok) {
-        const validationResult = await validationResponse.json();
-
-        if (!validationResult.valid) {
-          alert(
-            `Cannot add pile: ${validationResult.message}\n\nURL: ${source.source_url}`
-          );
-          return;
-        }
-
-        // Show file size if available
-        if (validationResult.file_size) {
-          const sizeMB = (validationResult.file_size / (1024 * 1024)).toFixed(
-            1
-          );
-          const confirmDownload = confirm(
-            `This file is ${sizeMB} MB. Do you want to add it to your piles?\n\n` +
-              `Note: You can download it later when you're ready.`
-          );
-          if (!confirmDownload) return;
-        }
-      } else {
-        console.warn("URL validation failed, proceeding anyway...");
-      }
-    } catch (error) {
-      console.warn("URL validation error, proceeding anyway:", error);
-    }
-
-    try {
-      const pileData = {
-        name: source.name,
-        display_name: source.display_name,
-        description: source.description,
-        category: source.category,
-        source_type: source.source_type,
-        source_url: source.source_url,
-        tags: source.tags,
-      };
-
-      const response = await fetch("http://localhost:8080/api/v1/piles/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(pileData),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log("Quick add successful:", result);
-        const addedPile = result.data;
-        setPiles([...piles, addedPile]);
-        loadPiles();
-        alert(`Pile "${source.display_name}" added successfully!`);
-      } else {
-        const errorData = await response.json();
-        console.error("Failed to quick add:", errorData);
-        alert(`Failed to add pile: ${errorData.detail}`);
-      }
-    } catch (error) {
-      console.error("Error quick adding:", error);
-      alert("Error adding pile");
-    }
-  };
-
   const handleInputChange = (field: keyof Pile, value: string | string[]) => {
     setNewPile((prev) => ({ ...prev, [field]: value }));
   };
@@ -911,7 +721,7 @@ export function Piles() {
   const loadPiles = async () => {
     try {
       console.log("Loading piles...");
-      const response = await fetch("http://localhost:8080/api/v1/piles/");
+      const response = await fetch("/api/v1/piles/");
       if (response.ok) {
         const result = await response.json();
         console.log("Piles loaded:", result);
@@ -964,19 +774,6 @@ export function Piles() {
     }
   };
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case "easy":
-        return "bg-green-100 text-green-800";
-      case "moderate":
-        return "bg-yellow-100 text-yellow-800";
-      case "advanced":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
   const getCategoryColor = (category: string) => {
     switch (category) {
       case "education":
@@ -1019,7 +816,7 @@ export function Piles() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/piles/${pile.id}/download-source`,
+        `/api/v1/piles/${pile.id}/download-source`,
         {
           method: "POST",
           headers: {
@@ -1058,7 +855,7 @@ export function Piles() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/piles/${pile.id}`,
+        `/api/v1/piles/${pile.id}`,
         {
           method: "DELETE",
           headers: {
@@ -1081,110 +878,6 @@ export function Piles() {
     } catch (error) {
       console.error("Error deleting pile:", error);
       alert("Error deleting pile");
-    }
-  };
-
-  const validateQuickAddUrl = async (sourceId: string, url: string) => {
-    if (validationStatus[sourceId]?.checking) return;
-
-    setValidationStatus((prev) => ({
-      ...prev,
-      [sourceId]: { valid: false, message: "Checking...", checking: true },
-    }));
-
-    try {
-      const formData = new FormData();
-      formData.append("url", url);
-
-      const response = await fetch(
-        "http://localhost:8080/api/v1/piles/validate-url",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setValidationStatus((prev) => ({
-          ...prev,
-          [sourceId]: {
-            valid: result.valid,
-            message: result.message,
-            checking: false,
-          },
-        }));
-      } else {
-        setValidationStatus((prev) => ({
-          ...prev,
-          [sourceId]: {
-            valid: false,
-            message: "Validation failed",
-            checking: false,
-          },
-        }));
-      }
-    } catch (error) {
-      setValidationStatus((prev) => ({
-        ...prev,
-        [sourceId]: {
-          valid: false,
-          message: "Network error",
-          checking: false,
-        },
-      }));
-    }
-  };
-
-  const searchGutenberg = async () => {
-    setGutenbergLoading(true);
-    setGutenbergResults([]);
-    try {
-      const resp = await fetch(
-        `http://localhost:8080/api/v1/piles/gutenberg-search?query=${encodeURIComponent(
-          gutenbergQuery
-        )}`
-      );
-      if (resp.ok) {
-        const data = await resp.json();
-        setGutenbergResults(data.data.results || []);
-      } else {
-        setGutenbergResults([]);
-      }
-    } catch (e) {
-      setGutenbergResults([]);
-    } finally {
-      setGutenbergLoading(false);
-    }
-  };
-
-  const handleAddGutenbergPile = async (book: GutenbergBook) => {
-    const pileData = {
-      name: `gutenberg_${book.id}`,
-      display_name: book.title,
-      description: `Project Gutenberg book${book.authors && book.authors.length ? ` by ${book.authors.map(a => a.name).join(", ")}` : ""}`,
-      category: "books",
-      source_type: "gutenberg",
-      source_url: String(book.id),
-      tags: book.subjects?.slice(0, 5) || [],
-    };
-    try {
-      const response = await fetch("http://localhost:8080/api/v1/piles/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pileData),
-      });
-      if (response.ok) {
-        const result = await response.json();
-        setPiles([...piles, result.data]);
-        loadPiles();
-        alert(`Pile for '${book.title}' added!`);
-      } else {
-        const errorData = await response.json();
-        alert(`Failed to add pile: ${errorData.detail}`);
-      }
-    } catch (e) {
-      alert("Error adding pile");
     }
   };
 
@@ -1211,7 +904,10 @@ export function Piles() {
       {showQuickAdd && (
         <KiwixTreeBrowser
           onDownload={async (files) => {
-            // For each file, create a pile
+            const failures: string[] = [];
+            let downloaded = 0;
+            setQuickAddResult(null);
+            // A single transfer at a time stays below the backend request-body limit.
             for (const file of files) {
               const pileData = {
                 name: file.name.replace(/\W+/g, "_").toLowerCase(),
@@ -1222,16 +918,28 @@ export function Piles() {
                 source_url: file.url,
                 tags: ["kiwix", "zim"],
               };
-              await fetch("http://localhost:8080/api/v1/piles/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(pileData),
-              });
+              try {
+                const created = await responseJson(await fetch("/api/v1/piles/", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(pileData),
+                }));
+                if (!Number.isInteger(created.data?.id)) throw new Error('The server did not return a pile ID');
+                await responseJson(await fetch(`/api/v1/piles/${created.data.id}/download-source`, { method: 'POST' }));
+                downloaded++;
+              } catch (error) {
+                failures.push(`${file.name}: ${error instanceof Error ? error.message : 'Download failed'}`);
+              }
             }
-            alert(`Added ${files.length} pile(s) to your library!`);
+            setQuickAddResult({ downloaded, failures });
+            await loadPiles();
           }}
         />
       )}
+      {quickAddResult && <div role="status" className="mb-4 rounded border p-4">
+        <p>Downloaded {quickAddResult.downloaded} file(s).</p>
+        {quickAddResult.failures.length > 0 && <><p className="text-red-600">{quickAddResult.failures.length} file(s) failed:</p><ul>{quickAddResult.failures.map(failure => <li key={failure}>{failure}</li>)}</ul></>}
+      </div>}
 
       {showAddForm && (
         <div className="bg-white rounded-lg shadow p-6 mb-6">
