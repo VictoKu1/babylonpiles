@@ -1,5 +1,6 @@
 """JSON authentication and server-side role enforcement."""
 import asyncio
+import hmac
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.passwords import hash_password, verify_password
+from app.core.security_controls import audit_event, check_login_limit, security_digest
 from app.models.user import User
 
 router = APIRouter()
@@ -67,6 +69,11 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Account is unavailable")
+    version = claims.get("credential_version")
+    expected = security_digest("credential", user.hashed_password)
+    if not isinstance(version, str) or not version.isascii() or not hmac.compare_digest(version, expected):
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    request.scope.setdefault("state", {})["audit_user_id"] = user.id
     return user
 
 
@@ -79,17 +86,24 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
 @router.post("/login")
 async def login(body: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     check_origin(request, required=False)
+    check_login_limit(request, body.username)
     user = (await db.execute(select(User).where(User.username == body.username))).scalar_one_or_none()
-    if not user or not user.is_active or not await asyncio.to_thread(verify_password, body.password, user.hashed_password):
+    verified_hash = user.hashed_password if user else ""
+    if not user or not user.is_active or not await asyncio.to_thread(verify_password, body.password, verified_hash):
+        audit_event("login.failed", scope=request.scope, reason="invalid_credentials")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     user.last_login = datetime.utcnow()
     await db.commit()
     await db.refresh(user)
-    token = create_access_token({"sub": str(user.id)})
+    if not user.is_active or user.hashed_password != verified_hash:
+        audit_event("login.failed", scope=request.scope, reason="account_changed")
+        raise HTTPException(status_code=401, detail="Account changed. Please sign in again.")
+    token = create_access_token({"sub": str(user.id), "credential_version": security_digest("credential", verified_hash)})
     response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict", path="/api",
                         secure=settings.cookie_secure or request.url.scheme == "https",
                         max_age=settings.access_token_expire_minutes * 60)
     response.headers["Cache-Control"] = "no-store"
+    audit_event("login.succeeded", scope=request.scope, user_id=user.id)
     return {"success": True, "data": {"access_token": token, "token_type": "bearer", "user": user.to_dict()}}
 
 
@@ -104,11 +118,12 @@ async def logout(request: Request, response: Response):
     if request.cookies.get(SESSION_COOKIE):
         check_origin(request)
     response.delete_cookie(SESSION_COOKIE, path="/api", httponly=True, samesite="strict")
+    audit_event("logout", scope=request.scope)
     return {"success": True, "message": "Logged out"}
 
 
-@router.post("/register", dependencies=[Depends(require_admin)])
-async def register(body: RegistrationRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/register")
+async def register(body: RegistrationRequest, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     user = User(username=body.username, hashed_password=await asyncio.to_thread(hash_password, body.password),
                 email=body.email, full_name=body.full_name, role="user", is_active=True)
     db.add(user)
@@ -118,4 +133,5 @@ async def register(body: RegistrationRequest, db: AsyncSession = Depends(get_db)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Username or email already exists")
+    audit_event("account.created", user_id=user.id, actor_id=admin.id)
     return {"success": True, "data": user.to_dict(), "message": "User registered"}

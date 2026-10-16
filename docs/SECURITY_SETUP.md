@@ -38,6 +38,8 @@ docker compose exec backend python -m app.admin reset-password --username admin
 
 Enter and confirm a new password of at least 12 characters, then sign in as **admin** with that password. Substitute your administrator's username if it differs. The reset command changes only the password; it does not grant an ordinary account administrator access or reactivate a disabled account. If the existing username belongs to an ordinary account, create the administrator with an unused username instead.
 
+A password reset invalidates that account's existing browser cookies and bearer tokens on subsequent requests, even when the same password is chosen again. Requests already authorized may finish. Sessions issued before credential-bound tokens were introduced also require a new login after upgrading. Ordinary logout clears the browser cookie; a copied bearer token remains valid until expiry or a password reset.
+
 If Docker reports that the backend service is not running, start it with the Compose command above and check `docker compose logs --tail=50 backend` if startup fails. Keep the state volume when troubleshooting so account data remains available.
 
 ## Persistent state and service credentials
@@ -79,6 +81,27 @@ COOKIE_SECURE=true
 ```
 
 The origin includes the scheme and any non-default port, without a path. Route the frontend and `/api` under that same origin, and preserve the browser's original `Host` and `Origin` headers through proxies. Recreate the backend after configuration changes. Secure cookies require HTTPS; the default local HTTP setup leaves `COOKIE_SECURE=false`. Restrict direct access to backend port 8080 when exposing the deployment through a TLS proxy so credentials cannot bypass HTTPS.
+
+## Request rates and audit events
+
+The following optional Compose `.env` settings control fixed request windows:
+
+| Setting | Default | Applies to |
+| --- | ---: | --- |
+| `API_RATE_LIMIT` | 600 | API requests per client per window, including public API routes |
+| `LOGIN_CLIENT_LIMIT` | 20 | Login attempts per client per window |
+| `LOGIN_ACCOUNT_LIMIT` | 5 | Login attempts per account name across clients per window |
+| `RATE_LIMIT_WINDOW_SECONDS` | 60 | Window duration in seconds |
+
+Both successful and failed login attempts count. Authentication still matches usernames exactly; throttling groups case variants. Excess requests return HTTP 429 with a `Retry-After` delay in seconds. API throttling runs before request-body staging. `/health` stays outside these limits. Recreate the backend after changing settings.
+
+Limits normally use the connection peer. Compose sets `RATE_LIMIT_TRUSTED_PROXIES=frontend`: the frontend overwrites `X-Forwarded-For` with the browser connection's address, and the backend accepts that single IP only from the configured proxy's resolved addresses. Direct clients cannot select their bucket with forwarding headers. Proxy names are resolved and cached for 60 seconds; unresolved proxies or malformed headers fall back to the connection peer. This can temporarily group clients during a proxy restart or lookup failure.
+
+Deploy the backend and frontend changes together with `docker compose up --build -d` (or the helper's `compose` command). An older proxy that passes through browser-supplied forwarding headers must not be configured as trusted. Expired or revoked browser sessions return to sign-in with a message and preserve the original route; successful sign-in returns there.
+
+For other deployments, `RATE_LIMIT_TRUSTED_PROXIES` accepts comma-separated exact IPs or trusted proxy hostnames; standalone backend defaults to no trusted proxies. A trusted proxy must overwrite browser-supplied forwarding headers with its actual client address. The shipped backend disables Uvicorn's separate proxy-header rewriting. Do not trust arbitrary forwarded headers or untrusted proxy hosts on the exposed backend port. Clients behind the same NAT still share a bucket. Limits are in memory per backend process, have bounded key tables, and reset on restart. Multiple workers or replicas need shared limiting state or an external limiter before claiming a deployment-wide quota.
+
+Security events cover login success/failure/throttling, access denials, API mutation responses, logout, account creation, and local password resets. View backend events with `docker compose logs backend`. Records use route templates, numeric account IDs where known, and keyed client identifiers; they omit passwords, tokens, raw client addresses, usernames, query strings, and file paths. Events are operational logs, not a tamper-proof audit store; configure log retention and protect access to them.
 
 ## Transfer limits and private content
 

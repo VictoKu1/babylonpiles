@@ -28,7 +28,9 @@ Kiwix reads top-level `.zim` files in host `storage/piles` and listens on the Do
 
 ## Dashboard storage figures
 
-The dashboard reads `/api/v1/system/storage`. `content_size_bytes` counts file bytes across `DATA_DIR` and `PILES_DIR`, counting shared files once. Capacity and available space come from the filesystem containing `DATA_DIR`; they do not combine the capacities of the pile mount and storage-service drives. If `DATA_DIR` is absent, empty, or contains only hidden entries, the current API reports zero capacity and available space.
+The dashboard reads `/api/v1/system/storage`. `content_size_bytes` counts file bytes across `DATA_DIR` and `PILES_DIR`, counting shared files once. Capacity and available space sum the distinct filesystems backing those roots, counting each filesystem once. Empty roots retain their usable capacity. A missing root uses its nearest existing parent's filesystem without creating directories. These figures exclude unrelated mounts and storage-service drives. Aggregate free space does not guarantee that one large file fits on its destination filesystem.
+
+Pile rollback stages and hashes a backup before atomically replacing the target. It updates the pile checksum, size, format, version, and timestamp, and records restored metadata in the rollback log. The backup filename's timestamp is the restored version because existing backups contain no original-version manifest. Copy, checksum, or replacement failures leave the current file and metadata unchanged. File replacement and the database commit are separate operations; full-instance recovery tooling, retention policies, and stored integrity manifests remain TODO items.
 
 Use the authenticated `/api/v1/storage/drives` API or the helper's `status` command to inspect chunk-storage drives. Adding those drives does not increase the dashboard's backend-content capacity.
 

@@ -41,13 +41,17 @@ test('same-origin proxy preserves CSRF headers, session cookies, and private med
 
   const login = await fetch(`${origin}/api/v1/auth/login`, {
     method: 'POST',
-    headers: { Origin: origin, 'Content-Type': 'application/json' },
+    headers: { Origin: origin, 'Content-Type': 'application/json',
+      'X-Forwarded-For': '198.51.100.99', 'X-Real-IP': '198.51.100.99', Forwarded: 'for=198.51.100.99' },
     body: JSON.stringify({ username: 'operator', password: 'test' }),
   })
   assert.equal(login.status, 200)
   assert.equal(login.headers.get('set-cookie'), 'session=test; HttpOnly; SameSite=Strict; Path=/')
   assert.equal(requests[0].headers.host, new URL(origin).host)
   assert.equal(requests[0].headers.origin, origin)
+  assert.match(requests[0].headers['x-forwarded-for'], /^(::ffff:)?127\.0\.0\.1$/)
+  assert.equal(requests[0].headers['x-real-ip'], undefined)
+  assert.equal(requests[0].headers.forwarded, undefined)
 
   const preview = await fetch(`${origin}/api/v1/files/preview/report.pdf`, {
     headers: { Cookie: 'session=test', Range: 'bytes=0-3' },

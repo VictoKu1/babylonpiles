@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 import asyncio
 import logging
 
@@ -67,34 +68,6 @@ async def get_update_logs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting update logs: {str(e)}"
-        )
-
-@router.get("/{log_id}")
-async def get_update_log(
-    log_id: int,
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
-    """Get a specific update log"""
-    try:
-        result = await db.execute(select(UpdateLog).where(UpdateLog.id == log_id))
-        log = result.scalar_one_or_none()
-        
-        if not log:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Update log not found"
-            )
-        
-        return {
-            "success": True,
-            "data": log.to_dict()
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting update log: {str(e)}"
         )
 
 @router.post("/pile/{pile_id}")
@@ -194,6 +167,15 @@ async def rollback_pile(
         
         if success:
             update_log.status = "completed"
+            update_log.version = pile.version
+            update_log.checksum = pile.checksum
+            update_log.file_path = pile.file_path
+            update_log.file_size = pile.file_size
+            update_log.completed_at = datetime.utcnow()
+            if update_log.started_at:
+                update_log.duration_seconds = max(
+                    0, int((update_log.completed_at - update_log.started_at).total_seconds())
+                )
         else:
             update_log.status = "failed"
             update_log.error_message = "Rollback failed"
@@ -318,6 +300,34 @@ async def get_update_status(db: AsyncSession = Depends(get_db)) -> Dict[str, Any
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting update status: {str(e)}"
+        )
+
+@router.get("/{log_id}")
+async def get_update_log(
+    log_id: int,
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """Get a specific update log"""
+    try:
+        result = await db.execute(select(UpdateLog).where(UpdateLog.id == log_id))
+        log = result.scalar_one_or_none()
+
+        if not log:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Update log not found"
+            )
+
+        return {
+            "success": True,
+            "data": log.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting update log: {str(e)}"
         )
 
 async def run_pile_update(pile_id: int, log_id: int, db: AsyncSession):

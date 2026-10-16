@@ -80,7 +80,7 @@ On the Piles page, add a source manually or use Quick Add to browse repositories
 
 The dashboard reports bytes in the configured content and piles directories, counting overlapping files once. It refreshes every 30 seconds; it does not update instantly in response to operations on another page. System metrics describe the environment visible inside the backend container.
 
-Chunk-storage drives use separate locations from the browser's content root. Adding a chunk-storage drive does not move existing browser files or expand the dashboard's content filesystem. Dashboard capacity has limitations for empty content roots and separate filesystems; see [Storage](docs/STORAGE.md) for the volume map, measurements, migration, and backups.
+Chunk-storage drives use separate locations from the browser's content root. Adding a chunk-storage drive does not move existing browser files or expand the dashboard's content capacity. The dashboard reports capacity across the distinct filesystems backing data and piles, including empty roots; see [Storage](docs/STORAGE.md) for the volume map, measurements, migration, and backups.
 
 ### Mirrored sources
 

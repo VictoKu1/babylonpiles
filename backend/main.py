@@ -14,6 +14,7 @@ import uvicorn
 
 from app.core.config import settings
 from app.core.request_limits import RequestBodyLimitMiddleware
+from app.core.security_controls import SecurityControlsMiddleware
 from app.core.database import init_db
 from app.api.v1.api import api_router
 from app.core.system import SystemManager
@@ -88,6 +89,9 @@ app = FastAPI(
 
 # The frontend proxies /api on the same origin; private APIs do not grant CORS.
 app.add_middleware(RequestBodyLimitMiddleware, max_upload_size=settings.max_upload_size)
+app.add_middleware(SecurityControlsMiddleware, api_limit=settings.api_rate_limit,
+                   window_seconds=settings.rate_limit_window_seconds,
+                   trusted_proxies=settings.rate_limit_trusted_proxies)
 
 @app.exception_handler(ValueError)
 async def invalid_input(request, exc):
@@ -128,4 +132,5 @@ if __name__ == "__main__":
         reload=False,
         log_level="info",
         access_log=False,
+        proxy_headers=False,
     ) 

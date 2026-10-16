@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -20,6 +21,7 @@ from app.api.v1.endpoints import auth, system
 from app.core.config import settings
 from app.core.database import Base, engine, AsyncSessionLocal
 from app.core.system import SystemManager
+from app.core import system as system_core
 from app.models.user import User
 
 
@@ -35,6 +37,10 @@ class DashboardStorageTests(unittest.IsolatedAsyncioTestCase):
         self.enterContext(patch.object(settings, "data_dir", str(self.data_dir)))
         self.enterContext(patch.object(settings, "piles_dir", str(self.piles_dir)))
         self.enterContext(patch.object(system, "system_manager", SystemManager()))
+        self.disk_usage = self.enterContext(patch.object(
+            system_core.psutil, "disk_usage",
+            return_value=SimpleNamespace(total=1000, used=400, free=600),
+        ))
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.drop_all)
             await connection.run_sync(Base.metadata.create_all)
@@ -67,6 +73,51 @@ class DashboardStorageTests(unittest.IsolatedAsyncioTestCase):
         data = await self.storage()
         self.assertEqual(data["content_size_bytes"], 0)
         self.assertEqual(data["piles_size_bytes"], 0)
+        self.assertEqual(data["total_bytes"], 1000)
+        self.assertEqual(data["available_bytes"], 600)
+
+    async def test_roots_on_same_filesystem_count_capacity_once(self):
+        (self.data_dir / "notes.txt").write_bytes(b"notes")
+        (self.piles_dir / "book.zim").write_bytes(b"reference")
+        data = await self.storage()
+        self.assertEqual(data["total_bytes"], 1000)
+        self.assertEqual(data["available_bytes"], 600)
+
+    async def test_roots_on_distinct_filesystems_sum_capacity(self):
+        original_stat = Path.stat
+
+        def filesystem_stat(path, *args, **kwargs):
+            info = original_stat(path, *args, **kwargs)
+            if path == self.piles_dir:
+                values = list(info)
+                values[2] = info.st_dev + 1
+                return os.stat_result(values)
+            return info
+
+        self.disk_usage.side_effect = lambda path: (
+            SimpleNamespace(total=2000, used=500, free=1500)
+            if Path(path) == self.piles_dir
+            else SimpleNamespace(total=1000, used=400, free=600)
+        )
+        with patch.object(Path, "stat", filesystem_stat):
+            data = await self.storage()
+        self.assertEqual(data["total_bytes"], 3000)
+        self.assertEqual(data["available_bytes"], 2100)
+
+    async def test_missing_roots_use_existing_parent_capacity_once(self):
+        self.data_dir.rmdir()
+        self.piles_dir.rmdir()
+        data = await self.storage()
+        self.assertEqual(data["total_bytes"], 1000)
+        self.assertEqual(data["available_bytes"], 600)
+        self.assertEqual(data["content_size_bytes"], 0)
+
+    async def test_hidden_content_does_not_hide_capacity(self):
+        (self.data_dir / ".metadata").write_bytes(b"meta")
+        data = await self.storage()
+        self.assertEqual(data["total_bytes"], 1000)
+        self.assertEqual(data["available_bytes"], 600)
+        self.assertEqual(data["content_size_bytes"], 4)
 
     async def test_counts_files_and_piles_recursively(self):
         (self.data_dir / "nested").mkdir()
@@ -75,6 +126,8 @@ class DashboardStorageTests(unittest.IsolatedAsyncioTestCase):
         data = await self.storage()
         self.assertEqual(data["content_size_bytes"], 14)
         self.assertEqual(data["piles_size_bytes"], 9)
+        self.assertEqual(data["used_bytes"], 14)
+        self.assertFalse(data["no_storage_allocated"])
 
     async def test_nested_piles_root_does_not_double_count_content(self):
         nested = self.data_dir / "piles"
@@ -123,6 +176,8 @@ class DashboardStorageTests(unittest.IsolatedAsyncioTestCase):
         (self.piles_dir / "book.zim").write_bytes(b"reference")
         data = await self.storage()
         self.assertEqual(data["content_size_bytes"], 9)
+        self.assertEqual(data["total_bytes"], 1000)
+        self.assertEqual(data["available_bytes"], 600)
 
     async def test_storage_still_requires_login(self):
         self.client.cookies.clear()

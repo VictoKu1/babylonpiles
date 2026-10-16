@@ -18,11 +18,15 @@ These items describe the current source tree. Unchecked items need implementatio
 - [x] Manage configured chunk-storage locations and migration through the storage service.
 - [x] Validate helper-managed Compose storage mappings, with rollback on failed changes.
 - [x] Add isolated backend, frontend component, installer, and Docker integration checks.
+- [x] Report usable capacity for empty content roots and count each backing filesystem once across data and piles.
+- [x] Serve update status without conflicting with log-ID routing, and return system hostname metadata correctly.
+- [x] Restore backup bytes atomically and synchronize pile metadata and successful rollback logs.
+- [x] Invalidate cookie and bearer sessions after password resets, including resets during login.
+- [x] Recover from expired browser sessions with a sign-in message and safe return route; preserve sessions on permission, throttling, and network errors.
+- [x] Bound login/API request rates and emit security audit events without credentials or raw client identifiers.
 
 ## Correctness and integration
 
-- [ ] Report usable capacity for empty content roots and define aggregate capacity when content roots span filesystems.
-- [ ] Fix the `GET /api/v1/updates/status` route being captured by the earlier `/{log_id}` route.
 - [ ] Replace or retire legacy live-server tests that assume anonymous administration, exposed port 8001, or a nonexistent dashboard endpoint.
 - [ ] Expand Docker integration coverage for actual mirrorer commands and scheduled runs, including failures and restart recovery.
 - [ ] Test simultaneous uploads, downloads, moves, and directory scans against realistic data sizes.
@@ -32,8 +36,8 @@ These items describe the current source tree. Unchecked items need implementatio
 ## Accounts and security
 
 - [ ] Add an administrator user-management interface.
-- [ ] Add login/API rate limits and security audit events.
-- [ ] Review session expiry and recovery UX; refresh tokens and 2FA would be separate additions.
+- [ ] Evaluate shared rate-limit state before deploying multiple backend workers or replicas; current limits are per process and reset on restart.
+- [ ] Evaluate refresh tokens, 2FA, and explicit server-side logout revocation separately from password-reset invalidation.
 - [ ] Automate dependency and container-image vulnerability checks in CI.
 - [ ] Test and document an HTTPS reverse-proxy deployment with certificate renewal; the current app already supports origin/secure-cookie settings.
 - [ ] Add backup encryption and verify recovery from encrypted backups.
@@ -46,7 +50,7 @@ These items describe the current source tree. Unchecked items need implementatio
 - [ ] Add bounded Internet Archive collection downloads beyond catalog generation.
 - [ ] Define a custom source-plugin interface; adding a repository URL is not a plugin system.
 - [ ] Evaluate additional adapters such as RSS and CD3WD against a concrete content need.
-- [ ] Add backup retention, integrity verification, and full-instance restore tooling.
+- [ ] Add backup retention, stored integrity manifests, and full-instance restore tooling. Restores already hash staged bytes and update metadata; detecting pre-existing backup corruption needs a stored expected checksum.
 - [ ] Improve chunk migration diagnostics, monitoring, and operator recovery.
 - [ ] Clarify content-versus-chunk-storage capacity in the UI.
 - [ ] Add instance-to-instance content sharing and export/import workflows if required.
@@ -57,7 +61,7 @@ These items describe the current source tree. Unchecked items need implementatio
 - [ ] Add multi-select/batch operations and undo for file moves.
 - [ ] Expand preview coverage where the browser can render a format safely.
 - [ ] Consider push-based progress updates; current dashboard/system refresh uses 30-second polling.
-- [ ] Improve error messages, retry behavior, and expired-session handling.
+- [ ] Extend actionable error messages and read retries to remaining workflows; expired-session recovery and source/public-content retries are implemented.
 - [ ] Evaluate offline browser caching/PWA support. Reading stored files from the local server already works without internet access.
 
 ## Performance and delivery

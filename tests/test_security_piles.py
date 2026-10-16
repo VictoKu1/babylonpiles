@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from yarl import URL
 from app.api.v1.api import api_router
 from app.api.v1.endpoints.auth import create_access_token
+from app.core.security_controls import security_digest
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.models.pile import Pile
@@ -70,7 +71,8 @@ class PileBoundaryTests(unittest.IsolatedAsyncioTestCase):
             user = User(username="pile-admin", hashed_password="unused-fixture", role="admin", is_active=True)
             db.add(user)
             await db.commit()
-            token = create_access_token({"sub": str(user.id)})
+            token = create_access_token({"sub": str(user.id),
+                                         "credential_version": security_digest("credential", user.hashed_password)})
         async def isolated_db():
             async with self.sessions() as db:
                 yield db

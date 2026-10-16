@@ -13,7 +13,7 @@ for (const extension of ['.ts', '.tsx']) {
 
 // A small hook renderer for exercising real component effects and event handlers.
 // It does not emulate browser layout, downloads, or native iframe behavior.
-function mount(Component, props = {}) {
+function mount(Component, props = {}, options = {}) {
   const slots = []
   let cursor = 0, tree, dirty = true
   const effects = []
@@ -46,7 +46,7 @@ function mount(Component, props = {}) {
     useLayoutEffect(effect, deps) { dispatcher.useEffect(effect, deps) },
     useContext(context) {
       const router = require('react-router-dom')
-      if (context === router.UNSAFE_LocationContext) return { location: { pathname: '/', search: '', hash: '', state: null, key: 'default' }, navigationType: 'POP' }
+      if (context === router.UNSAFE_LocationContext) return { location: { pathname: '/', search: '', hash: '', state: null, key: 'default', ...options.location }, navigationType: 'POP' }
       if (context === router.UNSAFE_NavigationContext) return { basename: '/', navigator: {}, static: false }
       return context._currentValue
     },

@@ -31,6 +31,8 @@ There is no default account or password. Create the first administrator using th
 
 `/auth/login` returns `access_token`, `token_type`, and `user` inside `data`, and sets an HttpOnly, SameSite=Strict cookie named `babylonpiles_session`, scoped to `/api`. Sessions expire after 30 minutes by default. API clients can send `Authorization: Bearer <access_token>`.
 
+Tokens are bound to the password hash used to authenticate. Password resets invalidate existing cookie and bearer sessions on subsequent requests; tokens from before this upgrade require a new login. Login attempts and API requests are rate limited. HTTP 429 includes `Retry-After` in seconds; clients should respect it and should not automatically repeat mutations. Defaults and proxy behavior are documented in [Security setup](SECURITY_SETUP.md#request-rates-and-audit-events).
+
 Cookie-authenticated mutations must send the deployment's matching `Origin`; the frontend supplies this through the same-origin proxy. Login accepts requests without an `Origin` header, but rejects a supplied origin that does not match. `/auth/logout` clears the cookie; it does not revoke a copied bearer token before its expiry. See [Security setup](SECURITY_SETUP.md) for origin and HTTPS configuration.
 
 ## Transfer Limits
@@ -122,11 +124,11 @@ Publishing a file makes it available through the public hotspot download route. 
 | --- | --- |
 | `content_size_bytes` | Regular-file bytes under `PILES_DIR` and `DATA_DIR`, excluding symbolic links and counting hard links or overlapping roots once |
 | `piles_size_bytes` | The portion measured under `PILES_DIR` |
-| `total_bytes`, `available_bytes` | Capacity and free space for the filesystem containing `DATA_DIR`; may be zero when no data storage is detected |
-| `used_bytes`, `usage_percent` | Data-directory file usage and its share of that filesystem's capacity |
-| `no_storage_allocated` | `true` when the data-directory check finds no usable content storage |
+| `total_bytes`, `available_bytes` | Capacity and free space summed once per distinct filesystem backing `DATA_DIR` and `PILES_DIR`; empty roots retain their capacity |
+| `used_bytes`, `usage_percent` | Deduplicated content bytes across both roots and their share of the aggregate capacity |
+| `no_storage_allocated` | `true` when no regular-file content was counted; this does not mean filesystem capacity is zero |
 
-The content total includes files such as backups and mirror logs within those roots. It is not the sum of pile database records. Capacity fields do not add together all mounted drives. `/system/metrics` instead reports CPU, memory, and the backend's root filesystem usage.
+The content total includes files such as backups and mirror logs within those roots. It is not the sum of pile database records. Missing roots use their nearest existing parent's filesystem without creating directories. Filesystem device identity prevents double-counting overlapping roots on the same filesystem. Capacity fields exclude unrelated mounts and chunk-storage drives. `/system/metrics` instead reports CPU, memory, and the backend's root filesystem usage.
 
 Hotspot start/stop, restart, and shutdown routes depend on Linux networking tools and host privileges that the default Compose services do not provide. Their presence in the API does not make them host controls in the default deployment.
 
@@ -191,7 +193,7 @@ The run-history `limit` defaults to 20 (range 1–100); log `tail` defaults to 4
 
 The log list accepts optional `pile_id`, `status`, and `limit` query parameters; `limit` defaults to 50. Rollback requires an existing backup; omit `version` for the latest backup or supply its `YYYYMMDD_HHMMSS` identifier.
 
-Current limitation: `/updates/status` is declared after `/updates/{log_id}`, so authenticated requests are handled as an invalid integer log ID and return HTTP 422. Use `/updates/` for logs and `/piles/?status=downloading` for active downloads until that routing issue is corrected.
+`/updates/status` returns recent logs, status counts, and downloading piles. Successful rollback records the restored file's path, size, checksum, backup timestamp version, and completion time. Restore prepares and hashes a replacement before atomically replacing the target; failed staging leaves the current bytes and metadata unchanged. Existing backups contain no original-version manifest, so their timestamp becomes the restored version.
 
 ## Pile Schemas
 

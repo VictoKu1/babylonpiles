@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     public_origin: Optional[str] = None
     max_catalog_size: int = Field(default=8 * 1024 * 1024, gt=0)
+    api_rate_limit: int = Field(default=600, gt=0, le=100000)
+    login_client_limit: int = Field(default=20, gt=0, le=1000)
+    login_account_limit: int = Field(default=5, gt=0, le=1000)
+    rate_limit_window_seconds: int = Field(default=60, gt=0, le=3600)
+    rate_limit_trusted_proxies: str = Field(default="", max_length=1024)
 
     # Storage
     data_dir: str = Field(default="/mnt/babylonpiles/data", env="DATA_DIR")

@@ -19,8 +19,10 @@ These checks need no running application or real administrator account:
 
 | Files | Coverage |
 | --- | --- |
-| `test_security_*.py`, excluding `test_security_stack.py` | Authentication, file and backup containment, sharing lifecycle, source HTTP policy, request limits, service credentials, and the public request form. |
-| `test_dashboard_storage.py` | Authenticated dashboard storage response and content byte accounting, including nested roots, hard links, and symlinks. |
+| `test_security_*.py`, excluding `test_security_stack.py` | Authentication and reset revocation, request throttling/audit events, file and backup containment, sharing lifecycle, source HTTP policy, request limits, service credentials, and the public request form. |
+| `test_dashboard_storage.py` | Authenticated dashboard storage, empty-root capacity, distinct-filesystem aggregation, and content deduplication. |
+| `test_update_status.py`, `test_system_info.py` | Update-status routing, persisted rollback metadata, and hostname/platform reporting. |
+| `test_backup_metadata.py` | Atomic backup restore, restored version/checksum, and preservation of current bytes/metadata after staging failures. |
 | `test_mirror_scheduling.py` | Daily, weekly, and monthly schedule calculations. |
 | `test_installer.py` | Storage helper configuration, rollback, and shell entry points using temporary fixtures and stubbed host operations. |
 | `test_privacy_guard.py` | Publication guards exercised against temporary Git repositories, including staged content and outgoing history. |
@@ -32,7 +34,7 @@ docker run --rm --network none \
   --mount "type=bind,source=$PWD,target=/repo,readonly" \
   -e PYTHONPATH=/repo/backend -e STATE_DIR=/tmp/security-tests \
   -e PYTHONDONTWRITEBYTECODE=1 \
-  babylonpiles-backend python -c 'import pathlib,subprocess,sys; root=pathlib.Path("/repo/tests"); tests=sorted(p for p in root.glob("test_security_*.py") if p.name != "test_security_stack.py"); tests += [root/name for name in ("test_dashboard_storage.py", "test_mirror_scheduling.py", "test_installer.py", "test_privacy_guard.py")]; results=[subprocess.run([sys.executable,str(p)]).returncode for p in tests]; sys.exit(any(results))'
+  babylonpiles-backend python -c 'import pathlib,subprocess,sys; root=pathlib.Path("/repo/tests"); tests=sorted(p for p in root.glob("test_security_*.py") if p.name != "test_security_stack.py"); tests += [root/name for name in ("test_dashboard_storage.py", "test_update_status.py", "test_system_info.py", "test_backup_metadata.py", "test_mirror_scheduling.py", "test_installer.py", "test_privacy_guard.py")]; results=[subprocess.run([sys.executable,str(p)]).returncode for p in tests]; sys.exit(any(results))'
 ```
 
 On Windows, use the absolute repository path for the bind source and PowerShell's backtick for line continuation, or place the command on one line. To run one regression script, keep the mount and environment options and replace `python -c '...'` with, for example, `python /repo/tests/test_dashboard_storage.py`.

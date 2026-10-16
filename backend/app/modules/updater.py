@@ -8,9 +8,10 @@ import os
 import hashlib
 import shutil
 import re
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import aiohttp
 import aiofiles
 
@@ -176,6 +177,7 @@ class ContentUpdater:
     
     async def _restore_backup(self, pile: Pile, backup_path: str) -> bool:
         """Restore pile from backup"""
+        staging_path = None
         try:
             backup_dir = backup_directory(pile)
             source_path = validate_stored_path(backup_dir, backup_path)
@@ -192,12 +194,30 @@ class ContentUpdater:
                 validate_name(file_format)
                 target_path = resolve_path(settings.piles_dir, f"{pile.name}.{file_format}")
             target_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_path, target_path)
+
+            # Prepare and hash a complete replacement before changing live bytes
+            # or metadata. Staging beside the target keeps replacement atomic.
+            with tempfile.NamedTemporaryFile(
+                prefix=".restore-", dir=target_path.parent, delete=False
+            ) as staging_file:
+                staging_path = Path(staging_file.name)
+            shutil.copy2(source_path, staging_path)
+            checksum = await self._calculate_checksum(str(staging_path))
+            if not checksum:
+                raise ValueError("Failed to calculate restored file checksum")
+            file_size = staging_path.stat().st_size
+            os.replace(staging_path, target_path)
+            staging_path = None
             
             # Update pile metadata
             pile.file_path = str(target_path)
-            pile.file_size = os.path.getsize(target_path)
+            pile.file_size = file_size
             pile.file_format = target_path.suffix.lstrip(".")
+            pile.checksum = checksum
+            # Existing backups contain only bytes, so their timestamp is the
+            # available version identifier; it must replace the newer version.
+            pile.version = source_path.stem
+            pile.last_updated = datetime.now(timezone.utc).replace(tzinfo=None)
             
             logger.info(f"Restored pile from backup: {backup_path}")
             return True
@@ -205,6 +225,12 @@ class ContentUpdater:
         except Exception as e:
             logger.error(f"Error restoring backup for {pile.name}: {e}")
             return False
+        finally:
+            if staging_path is not None:
+                try:
+                    staging_path.unlink(missing_ok=True)
+                except OSError as e:
+                    logger.error(f"Error cleaning up backup restore staging file: {e}")
     
     async def _update_pile_metadata(self, pile: Pile, update_log: UpdateLog):
         """Update pile metadata after successful update"""

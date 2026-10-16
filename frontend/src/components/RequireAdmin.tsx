@@ -11,7 +11,7 @@ export function RequireAdmin() {
     return <div role="status" className="min-h-screen flex items-center justify-center text-gray-600">Checking session...</div>
   }
   if (!isAdminUser(user)) {
-    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search + location.hash }} />
   }
   return <Outlet />
 }

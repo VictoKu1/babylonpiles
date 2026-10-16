@@ -40,7 +40,9 @@ The optional Unix `babylonpiles.sh` helper manages Compose and additional host s
 - The standalone storage service and backend content stores have separate locations. Adding chunk-storage capacity does not automatically migrate backend files.
 - Kiwix is a separate read-only reader bound to the host loopback interface. It does not implement BabylonPiles authorization.
 - Host Wi-Fi configuration belongs to the operating system. Docker containers are not granted privileged host access by the supported deployment.
-- The dashboard and system page refresh every 30 seconds. Storage capacity describes the backend content filesystem, with limitations for empty roots and separate mounts; it is not the sum of chunk-storage drives.
+- The dashboard and system page refresh every 30 seconds. Storage capacity counts each filesystem backing data and piles once, including empty roots; it excludes unrelated chunk-storage drives.
+- Password resets invalidate existing sessions. Login/API request limits and credential-free security events are enabled; limits are per backend process, with client identity accepted only from configured trusted proxies.
+- Pile rollback stages and hashes replacement bytes, updates restored metadata, and records it in the rollback log. Full-instance restore and backup integrity manifests remain unimplemented.
 - Search/indexing, richer user-management UI, and broader content integrations remain development areas. See [Roadmap](RoadMap.md) and [TODO](TODO.md).
 
 ## Development

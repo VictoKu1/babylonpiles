@@ -36,6 +36,13 @@ export async function loginSession(username: string, password: string): Promise<
     body: JSON.stringify({ username, password }),
   })
   if (!response.ok) {
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After')?.trim() || ''
+      const seconds = /^\d+$/.test(retryAfter) ? Number(retryAfter) : Math.ceil((Date.parse(retryAfter) - Date.now()) / 1000)
+      const wait = Number.isFinite(seconds) && seconds > 0 && seconds <= 86400
+        ? `in ${seconds} ${seconds === 1 ? 'second' : 'seconds'}` : 'shortly'
+      throw new Error(`Too many sign-in attempts. Please try again ${wait}.`)
+    }
     throw new Error(response.status === 401 ? 'Incorrect username or password.' : 'Sign in failed. Please try again.')
   }
   const result = await response.json()

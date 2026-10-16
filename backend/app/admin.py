@@ -6,6 +6,7 @@ import sys
 from sqlalchemy import select
 from app.core.database import init_db, AsyncSessionLocal, close_db
 from app.core.passwords import hash_password
+from app.core.security_controls import audit_event
 from app.models.user import User
 
 
@@ -24,10 +25,13 @@ async def manage_account(action: str, username: str, password: str):
             raise ValueError("Account does not exist")
         user.hashed_password = await asyncio.to_thread(hash_password, password)
         await db.commit()
+        audit_event("account.created" if action == "create" else "account.password_reset", user_id=user.id, reason="local_operator")
     await close_db()
 
 
 def main():
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Create an administrator or reset an account password locally")
     parser.add_argument("action", choices=["create", "reset-password"])
     parser.add_argument("--username", required=True)

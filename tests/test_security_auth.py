@@ -21,6 +21,7 @@ from app.api.v1.api import api_router
 from app.api.v1.endpoints import auth
 from app.core.database import Base, engine, AsyncSessionLocal, init_db
 from app.models.user import User
+from app.admin import manage_account
 
 
 class AuthTests(unittest.IsolatedAsyncioTestCase):
@@ -106,6 +107,28 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post("/api/v1/auth/logout", headers={"Origin": "http://testserver"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual((await self.client.get("/api/v1/auth/me")).status_code, 401)
+
+    async def test_password_reset_revokes_cookie_and_bearer_sessions(self):
+        response = await self.login()
+        token = response.json()["data"]["access_token"]
+        # Resetting to the same password must still invalidate old sessions.
+        await manage_account("reset-password", "admin", "test-admin-password")
+        self.assertEqual((await self.client.get("/api/v1/auth/me")).status_code, 401)
+        response = await self.client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual((await self.login()).status_code, 200)
+        self.assertEqual((await self.client.get("/api/v1/auth/me")).status_code, 200)
+
+    async def test_legacy_signed_token_requires_new_login(self):
+        token = auth.create_access_token({"sub": "1"})
+        response = await self.client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(response.status_code, 401)
+
+    async def test_invalid_credential_versions_are_rejected(self):
+        for version in (None, 1, [], {}, "incorrect", "non-ascii-\u00e9"):
+            token = auth.create_access_token({"sub": "1", "credential_version": version})
+            response = await self.client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+            self.assertEqual(response.status_code, 401, repr(version))
 
     async def test_wrong_password_and_foreign_login_origin_are_rejected(self):
         self.assertEqual((await self.login(password="incorrect-password")).status_code, 401)

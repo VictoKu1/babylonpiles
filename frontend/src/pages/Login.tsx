@@ -2,18 +2,16 @@ import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { isAdminUser } from '../api/auth'
+import { safeReturnPath } from '../api/session'
 
 export function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const { user, loading, login, logout } = useAuth()
+  const { user, loading, sessionExpired, login, logout } = useAuth()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const location = useLocation()
-  const requestedPath = location.state?.from
-  const destination = typeof requestedPath === 'string' && requestedPath.startsWith('/') &&
-    !requestedPath.startsWith('//') && !requestedPath.includes('\\') && requestedPath !== '/login'
-    ? requestedPath : '/'
+  const destination = safeReturnPath(location.state?.from)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,6 +38,7 @@ export function Login() {
           </h2>
           <p className="mt-3 text-center text-sm text-gray-600">Use an administrator account created by the server operator.</p>
         </div>
+        {sessionExpired && <p role="status" className="text-amber-800 text-sm">Your session has expired. Please sign in again to continue.</p>}
         {error && <p role="alert" className="text-red-700 text-sm">{error}</p>}
         {user && !isAdminUser(user) && (
           <div role="alert" className="text-sm text-amber-800 bg-amber-50 p-4 rounded">
